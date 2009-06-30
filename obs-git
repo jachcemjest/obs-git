@@ -1,0 +1,117 @@
+#!/bin/sh
+
+PROG=`basename $0`
+OBSROOT='/srv/obs'
+
+function usage() {
+    if [ $# -lt 1 ] ; then
+        echo
+        echo "Usage:"
+        echo -e "\t$PROG create prj pkg"
+        echo -e "\t$PROG branch srcprj srcpkg destprj destpkg"
+        echo -e "\t$PROG remove prj pkg"
+        echo -e "\t$PROG import prj pkg"
+        echo
+    fi
+    exit 1
+}
+
+function create() {
+    if [ -z "$1" -o -z "$2" ] ; then
+        usage
+    fi
+    prj="`echo $1 | tr : /`"
+    pkg="$2"
+    if [ -d "$OBSROOT/sources_git/$prj/$pkg" ]; then
+        echo "Package $pkg already exists in project $1 ..."
+        return 1
+    fi
+    mkdir -p "$OBSROOT/sources_git/$prj/$pkg"
+    cd "$OBSROOT/sources_git/$prj/$pkg"
+    git init --bare
+    rm -rf objects hooks
+    mkdir -p "$OBSROOT/sources_git/:objects/$pkg/"{info,pack}
+    mkdir -p "$OBSROOT/sources_git/:hooks"
+    ln -sf "$OBSROOT/sources_git/:objects/$pkg" objects
+    ln -sf "$OBSROOT/sources_git/:hooks" hooks
+}
+
+function branch() {
+    if [ -z "$1" -o -z "$2" -o -z "$3" -o -z "$4" ] ; then
+        usage
+    fi
+    srcprj="`echo $1 | tr : /`"
+    srcpkg="$2"
+    destprj="`echo $3 | tr : /`"
+    destpkg="$4"
+    mkdir -p "$OBSROOT/sources_git/$destprj"
+    cp -a "$OBSROOT/sources_git/$srcprj/$srcpkg" "$OBSROOT/sources_git/$destprj/$destpkg"
+    cd "$OBSROOT/sources_git/$destprj/$destpkg"
+    git remote add origin "$OBSROOT/sources_git/$srcprj/$destpkg"
+}
+
+function remove() {
+    if [ -z "$1" -o -z "$2" ] ; then
+        usage
+    fi
+    prj="`echo $1 | tr : /`"
+    pkg="$2"
+    rm -rf "$OBSROOT/sources_git/$prj/$pkg"
+}
+
+function import() {
+    if [ -z "$1" -o -z "$2" ] ; then
+        usage
+    fi
+    prj="`echo $1 | tr : /`"
+    pkg="$2"
+    revfile="$OBSROOT/projects/$1.pkg/$pkg.rev"
+    if [ \! -f "$revfile" ]; then
+        echo "Package $pkg does not exist in project $1 ..."
+        return 1
+    fi
+    if ! create "$1" "$2" ; then
+        return 1
+    fi
+    mkdir -p "$OBSROOT/sources_git/:temp"
+    tmp="`mktemp -d -u $OBSROOT/sources_git/:temp/XXXXXXXXXX`"
+    git clone -l "$OBSROOT/sources_git/$prj/$pkg" "$tmp"
+    cd "$tmp"
+
+    cat "$revfile" | while read rev; do
+        revnum="`echo $rev | cut -d'|' -f1`"
+        hash="`echo $rev | cut -d'|' -f3`"
+        timestamp="`echo $rev | cut -d'|' -f5`"
+        author="`echo $rev | cut -d'|' -f6`"
+        msg="`echo $rev | cut -d'|' -f7 | sed 's:%0A:\n:g'`"
+        git rm *
+        revlist="$OBSROOT/sources/$pkg/$hash-MD5SUMS"
+        cat "$revlist" | while read line; do
+            fhash="`echo $line | cut -d' ' -f1`"
+            fname="`echo $line | cut -d' ' -f2`"
+            ln "$OBSROOT/sources/$pkg/$fhash-$fname" "$tmp/$fname"
+        done
+        git add *
+        echo -e "imported revision $revnum:\n-----------------\n$msg" | GIT_AUTHOR_DATE="$timestamp" git commit --author="$author <$author@imported>" --file=-
+    done
+    git push origin master
+    rm -rf "$tmp"
+}
+
+case "$1" in
+    create)
+        create "$2" "$3"
+        ;;
+    import)
+        import "$2" "$3"
+        ;;
+    branch)
+        branch "$2" "$3" "$4" "$5"
+        ;;
+    remove)
+        remove "$2" "$3"
+        ;;
+    *)
+        usage
+        ;;
+esac
