@@ -1,0 +1,1004 @@
+#!/usr/bin/perl -w
+
+use strict;
+
+sub readproj {
+  my ($projid, $nonfatal) = @_;
+  my $proj = readxml("$projectsdir/$projid.xml", $BSXML::proj, 1);
+  die("project '$projid' does not exist\n") if !$proj && !$nonfatal;
+  return $proj;
+}
+
+sub findprojects {
+  local *D;
+  opendir(D, $projectsdir) || die("$projectsdir: $!\n");
+  my @projids = grep {s/\.xml$//} readdir(D);
+  closedir(D);
+  return sort @projids;
+}
+
+sub getprojectlist {
+  my ($cgi) = @_;
+  my @projects = findprojects();
+  @projects = map {{'name' => $_}} @projects;
+  return ({'entry' => \@projects}, $BSXML::dir);
+}
+
+sub projectcmd {
+  my ($cgi, $projid) = @_;
+  my $cmd = $cgi->{'cmd'};
+  return createkey($cgi, $projid) if $cmd eq 'createkey';
+  die("unknown command '$cmd'\n");
+}
+
+sub findpackages {
+  my ($projid) = shift;
+  opendir(D, "$projectsdir/$projid.pkg") || return ();
+  my @packids = grep {s/\.xml$//} readdir(D);
+  closedir(D);
+  return sort @packids;
+}
+
+##########################################################################
+
+# XXX -> library
+
+sub remoteprojid {
+  my ($projid) = @_;
+  my $rsuf = '';
+  my $origprojid = $projid;
+
+  my $proj = readproj($projid, 1);
+  if ($proj) {
+    return undef unless $proj->{'remoteurl'};
+    return undef unless $proj->{'remoteproject'};
+    return {
+      'name' => $projid,
+      'root' => $projid,
+      'remoteroot' => $proj->{'remoteproject'},
+      'remoteurl' => $proj->{'remoteurl'},
+      'remoteproject' => $proj->{'remoteproject'},
+    };
+  }
+  while ($projid =~ /^(.*)(:.*?)$/) {
+    $projid = $1;
+    $rsuf = "$2$rsuf";
+    $proj = readproj($projid, 1);
+    if ($proj) {
+      return undef unless $proj->{'remoteurl'};
+      if ($proj->{'remoteproject'}) {
+        $rsuf = "$proj->{'remoteproject'}$rsuf";
+      } else {
+        $rsuf =~ s/^://;
+      }
+      return {
+        'name' => $origprojid,
+        'root' => $projid,
+        'remoteroot' => $proj->{'remoteproject'},
+        'remoteurl' => $proj->{'remoteurl'},
+        'remoteproject' => $rsuf,
+      };
+    }
+  }
+  return undef;
+}
+
+sub checkprojrepoarch {
+  my ($projid, $repoid, $arch, $remoteok) = @_;
+  my $proj = readproj($projid, 1);
+  $proj = remoteprojid($projid) if $remoteok && (!$proj || $proj->{'remoteurl'});
+  die("project '$projid' does not exist\n") if !$proj;
+  die("project '$projid' is remote\n") if $proj->{'remoteurl'} && !$remoteok;
+  return $proj if $proj->{'remoteurl'};
+  return $proj unless defined $repoid;
+  my $repo = (grep {$_->{'name'} eq $repoid} @{$proj->{'repository'} || []})[0];
+  die("project has no repository '$repoid'\n") unless $repo;
+  return $proj unless defined $arch;
+  die("project has no architecture '$arch'\n") unless grep {$_ eq $arch} @{$repo->{'arch'} || []};
+  return $proj;
+}
+
+sub getpackagelist {
+  my ($cgi, $projid, $repoid, $arch) = @_;
+  my $proj = checkprojrepoarch($projid, $repoid, $arch, 1);
+  if ($proj->{'remoteurl'}) {
+    return BSRPC::rpc("$proj->{'remoteurl'}/source/$proj->{'remoteproject'}", $BSXML::dir), $BSXML::dir;
+  }
+  my @packages = findpackages($projid);
+  my @plist = map {{'name' => $_}} @packages;
+  return ({'entry' => \@plist}, $BSXML::dir);
+}
+
+#deletes project (metadata) but the sources stay untouched
+sub delproject {
+  my ($cgi, $projid) = @_;
+
+  die("project '$projid' does not exist\n") unless -e "$projectsdir/$projid.xml";
+  if (-d "$projectsdir/$projid.pkg") {
+    # delete those packages and keys
+    for my $f (ls("$projectsdir/$projid.pkg")) {
+      unlink("$projectsdir/$projid.pkg/$f");
+    }
+    rmdir("$projectsdir/$projid.pkg") || die("rmdir $projectsdir/$projid.pkg: $!\n");
+  }
+  unlink("$projectsdir/$projid.conf");
+  unlink("$projectsdir/$projid.xml");
+  notify_repservers('project', $projid);
+
+  BSHermes::notify("SRCSRV_DELETE_PROJECT", { "project" => $projid });
+
+  return $BSStdServer::return_ok;
+}
+
+sub getproject {
+  my ($cgi, $projid) = @_;
+  # Read the project xml file
+  my $proj = checkprojrepoarch($projid, undef, undef, 1);
+  $proj = BSRPC::rpc("$proj->{'remoteurl'}/source/$proj->{'remoteproject'}/_meta", $BSXML::proj) if $proj->{'remoteurl'};
+  return ($proj, $BSXML::proj);
+}
+
+sub getsignkey {
+  my ($cgi, $projid) = @_;
+
+  while ($projid ne '') {
+    my $sk = readstr("$projectsdir/$projid.pkg/_signkey", 1);
+    if ($sk) {
+      if ($cgi->{'withpubkey'}) {
+        my $pk = readstr("$projectsdir/$projid.pkg/_pubkey", 1);
+        $sk .= "\n" unless $sk =~ /\n$/s;
+        $sk .= $pk;
+      }
+      return ($sk, 'Content-Type: text/plain') if $sk;
+    }
+    $projid =~ s/[^:]*$//;
+    $projid =~ s/:$//;
+  }
+  return ('', 'Content-Type: text/plain');
+}
+
+sub addevent {
+  my ($ev) = @_;
+  $ev->{'time'} = time();
+  mkdir_p("$eventdir");
+  if (-s "$eventdir/lastevents" && -s _ >= 65536) {
+    local *F;
+    BSUtil::lockopen(\*F, '+>>', "$eventdir/lastevents");
+    my $events = readstr("$eventdir/lastevents");
+    if (length($events) >= 65536) {
+      $events = substr($events, -32768);
+      $events =~ s/^[^\n]*\n//s;
+      writestr("$eventdir/.lastevents", "$eventdir/lastevents", $events);
+    }
+    close F;
+  }
+  BSFileDB::fdb_add_i("$eventdir/lastevents", $eventlay, $ev);
+}
+
+sub notify_repservers {
+  my ($type, $projid, $packid) = @_;
+
+  my $ev = {'type' => $type, 'project' => $projid};
+  $ev->{'package'} = $packid if defined $packid;
+  addevent($ev);
+
+  my @args = ("type=$type", "project=$projid");
+  push @args, "package=$packid" if defined $packid;
+  for my $rrserver ($BSConfig::reposerver) {
+    eval {
+      BSRPC::rpc("$rrserver/event", undef, @args);
+    };
+    print "warning: $rrserver: $@" if $@;
+  }
+}
+
+sub getpubkey {
+  my ($cgi, $projid) = @_;
+  my $pubkey = readstr("$projectsdir/$projid.pkg/_pubkey", 1);
+  die("$projid: no pubkey available\n") unless $pubkey;
+  return ($pubkey, 'Content-Type: text/plain');
+}
+
+sub deletekey {
+  my ($cgi, $projid) = @_;
+  if ($BSConfig::forceprojectkeys) {
+    my $pprojid = $projid;
+    $pprojid =~ s/:[^:]*$//;
+    my $sk;
+    ($sk) = getsignkey({}, $pprojid) if $projid ne $pprojid;
+    die("must have a key for signing\n") unless $sk;
+  }
+  unlink("$projectsdir/$projid.pkg/_signkey");
+  unlink("$projectsdir/$projid.pkg/_pubkey");
+  rmdir("$projectsdir/$projid.pkg");
+  return $BSStdServer::return_ok;
+}
+
+sub getprojectconfig {
+  my ($cgi, $projid) = @_;
+  my $proj = readproj($projid);
+  my $config = readstr("$projectsdir/$projid.conf", 1);
+  $config = '' unless defined $config;
+  return ($config, 'Content-Type: text/plain');
+}
+
+sub findlastrev {
+  my ($projid, $packid, $srcmd5) = @_;
+  my $rev = BSFileDB::fdb_getmatch("$projectsdir/$projid.pkg/$packid.rev", $srcrevlay, 'srcmd5', $srcmd5);
+  return $rev;
+}
+
+sub findprojectpatchname {
+  my ($files) = @_;
+
+  my $i = "";
+  while ($files->{"project$i.diff"}) {
+    $i = '0' unless $i;
+    $i++;
+  }
+  return "project$i.diff";
+}
+
+###!!! obs-git: this function is common, but depends on many others - that are specific to bsdb
+sub sourcecmd {
+  my ($cgi, $projid, $packid) = @_;
+  return sourcediff($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'diff';
+  return sourcecommit($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'commit';
+  return sourcecommitfilelist($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'commitfilelist';
+  return sourcecopy($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'copy';
+  if ($cgi->{'cmd'} eq 'deleteuploadrev') {
+    unlink("$projectsdir/$projid.pkg/$packid.upload-MD5SUMS");
+    return $BSStdServer::return_ok;
+  }
+  die("unknown command \"$cgi->{'cmd'}\"\n");
+}
+
+sub getpackagehistory {
+  my ($cgi, $projid, $packid) = @_;
+  my @res;
+  for (BSFileDB::fdb_getall("$projectsdir/$projid.pkg/$packid.rev", $srcrevlay)) {
+    next if $cgi->{'rev'} && $cgi->{'rev'} ne $_->{'rev'} && $cgi->{'rev'} ne $_->{'srcmd5'};
+    push @res, $_;
+  }
+  return ({'revision' => \@res}, $BSXML::revisionlist);
+}
+
+sub readpack {
+  my ($projid, $packid, $nonfatal) = @_;
+  my $pack = readxml("$projectsdir/$projid.pkg/$packid.xml", $BSXML::pack, 1);
+  if (!$pack && !$nonfatal) {
+    readproj($projid);
+    die("package '$packid' does not exist in project '$projid'\n");
+  }
+  return $pack;
+}
+
+###!!! obs-git: uses rpc
+sub getpackage {
+  my ($cgi, $projid, $packid) = @_;
+  my $proj = checkprojrepoarch($projid, undef, undef, 1);
+  if ($proj->{'remoteurl'}) {
+    my $pack = BSRPC::rpc("$proj->{'remoteurl'}/source/$proj->{'remoteproject'}/$packid/_meta", $BSXML::pack);
+    return ($pack, $BSXML::pack);
+  }
+  my $pack = readpack($projid, $packid);
+  return ($pack, $BSXML::pack);
+}
+
+###!!! obs-git: uses expandproduct function which is bsdb only
+sub delpackage {
+  my ($cgi, $projid, $packid) = @_;
+  die("project '$projid' does not exist\n") unless -e "$projectsdir/$projid.xml";
+  die("package '$packid' does not exist in project '$projid'\n") unless -e "$projectsdir/$projid.pkg/$packid.xml";
+  die("package '$packid' is read-only\n") if $packid =~ /^_product:/;
+  unlink("$projectsdir/$projid.pkg/$packid.upload-MD5SUMS");
+  unlink("$projectsdir/$projid.pkg/$packid.rev");
+  unlink("$projectsdir/$projid.pkg/$packid.xml");
+  if ($packid eq '_product') {
+    expandproduct($projid, $packid, undef);
+  }
+  notify_repservers('package', $projid, $packid);
+  BSHermes::notify("SRCSRV_DELETE_PACKAGE", { "project" => $projid, "package" => $packid });
+
+  return $BSStdServer::return_ok;
+}
+
+
+##
+#  published namespace
+##
+
+sub published {
+  my ($cgi, $projid, $repoid, $arch, $filename) = @_;
+  my @args;
+  die("unknown view '$cgi->{'view'}'\n") if $cgi->{'view'} && $cgi->{'view'} ne 'ymp' && $cgi->{'view'} ne 'fileinfo';
+  push @args, "view=$cgi->{'view'}" if $cgi->{'view'};
+  my $p = "/published";
+  $p .= "/$projid" if defined $projid;
+  $p .= "/$repoid" if defined $repoid;
+  $p .= "/$arch" if defined $arch;
+  $p .= "/$filename" if defined $filename;
+  my $param = {
+    'uri' => "$BSConfig::reposerver$p",
+    'ignorestatus' => 1,
+    'receiver' => \&BSServer::reply_receiver,
+  };
+  BSWatcher::rpc($param, undef, @args);
+  return undef;
+}
+
+##
+#  scheduler calls
+##
+
+sub getprojquotapackage {
+  my ($projid) = @_;
+  if (!exists($packagequota{':packages'})) {
+    my $quotaxml = readxml($BSConfig::bsquotafile, $BSXML::quota, 1);
+    for my $p (@{$quotaxml->{'project'} || []}) {
+      $packagequota{$p->{'name'}} = $p->{'packages'};
+    }
+    $packagequota{':packages'} = $quotaxml->{'packages'};
+  }
+  while ($projid) {
+    return $packagequota{$projid} if exists $packagequota{$projid};
+    last unless $projid =~ s/:[^:]*$//;
+  }
+  return $packagequota{':packages'};
+}
+
+sub maptoremote {
+  my ($proj, $projid) = @_;
+  return "$proj->{'root'}:$projid" unless $proj->{'remoteroot'};
+  return $proj->{'root'} if $projid eq $proj->{'remoteroot'};
+  return '_unavailable' if $projid !~ /^\Q$proj->{'remoteroot'}\E:(.*)$/;
+  return "$proj->{'root'}:$1";
+}
+
+
+##
+#  worker calls
+##
+
+###!!! obs-git: depends on some function from 'notsure'
+sub getconfig {
+  my ($cgi, $projid, $repoid) = @_;
+  my @path = expandsearchpath($projid, $repoid);
+  if ($cgi->{'path'}) {
+    @path = @{$cgi->{'path'}};
+    # XXX: commented out to make it consistent to the scheduler
+    # unshift @path, "$projid/$repoid" unless @path && $path[0] eq "$projid/$repoid";
+  }
+  my $config = "%define _project $projid\n";
+  my $macros = "%vendor openSUSE Build Service\n";
+  $macros .= "%_project $projid\n";
+  my $lastr = '';
+
+  my $distinfo = "$projid / $repoid";
+  if ($repoid eq 'standard') {
+    $distinfo = $projid;
+  } 
+
+  for my $prp (reverse @path) {
+    if ($prp eq "$projid/$repoid") {
+      $macros .= "\n%distribution $distinfo\n";
+      $macros .= "%_project $projid\n";
+    }
+    my ($p, $r) = split('/', $prp, 2);
+    my $c;
+    if (-s "$projectsdir/$p.conf") {
+      $c = readstr("$projectsdir/$p.conf");
+    } elsif (!-e "$projectsdir/$p.xml") {
+      my $proj = remoteprojid($p);
+      $c = fetchremoteconfig($proj, $p);
+    }
+    next unless defined $c;
+    $config .= "\n### from $p\n";
+    $config .= "%define _repository $r\n";
+    if ($c =~ /^(.*\n)?\s*macros:[^\n]*\n(.*)/si) {
+      $c = defined($1) ? $1 : '';
+      $macros .= "\n### from $p\n";
+      $macros .= "%_repository $r\n";
+      $macros .= $2;
+      $lastr = $r;
+    }
+    $config .= $c;
+  }
+  if ($lastr ne $repoid) {
+    $macros .= "\n### from $projid\n";
+    $macros .= "%_repository $repoid\n";
+  }
+  if (!@path || $path[0] ne "$projid/$repoid") {
+    $macros .= "\n%distribution $distinfo\n";
+    $macros .= "%_project $projid\n";
+  }
+  if ($BSConfig::extramacros) {
+    for (sort keys %{$BSConfig::extramacros}) {
+      $macros .= $BSConfig::extramacros->{$_} if $projid =~ /$_/;
+    }
+  }
+  $config .= "\nMacros:\n$macros" if $macros ne '';
+  return ($config, 'Content-Type: text/plain');
+}
+
+sub findremote {
+  my ($projid) = @_;
+
+  my $origprojid = $projid;
+  my $proj = readproj($projid, 1);
+  if ($proj) {
+    return ($BSConfig::reposerver, $projid) if !$proj->{'remoteurl'};
+    die("no remoteproject specified\n") unless $proj->{'remoteproject'};
+    return ($proj->{'remoteurl'}, $proj->{'remoteproject'});
+  }
+  my $rsuf = '';
+  while ($projid =~ /^(.*)(:.*?)$/) {
+    $projid = $1;
+    $rsuf = "$2$rsuf";
+    $proj = readproj($projid, 1);
+    next unless $proj;
+    die("project '$origprojid' does not exist\n") unless $proj->{'remoteurl'};
+    if ($proj->{'remoteproject'}) {
+      return ($proj->{'remoteurl'}, "$proj->{'remoteproject'}$rsuf");
+    }
+    $rsuf =~ s/^://;
+    return ($proj->{'remoteurl'}, $rsuf);
+  }
+  die("project '$origprojid' does not exist\n") unless $proj->{'remoteurl'};
+}
+
+###!!! obs-git: uses remotecache directory - probably not a problem
+sub worker_getbinaries {
+  my ($cgi, $projid, $repoid, $arch) = @_;
+
+  if (!$BSStdServer::isajax) {
+    my @args;
+    push @args, "project=$projid";
+    push @args, "repository=$repoid";
+    push @args, "arch=$arch";
+    push @args, "binaries=$cgi->{'binaries'}";
+    BSHandoff::handoff($ajaxsocket, '/getbinaries', undef, @args);
+    exit(0);
+  }
+  my @binaries = split(',', $cgi->{'binaries'});
+  my ($remoteurl, $remoteprojid) = findremote($projid);
+  my $binarylist = BSWatcher::rpc("$remoteurl/build/$remoteprojid/$repoid/$arch/_repository", $BSXML::binarylist, "view=names", map {"binary=$_"} @binaries);
+  return undef if $BSStdServer::isajax && !$binarylist;
+  my %binarylist;
+  for my $b (@{$binarylist->{'binary'} || []}) {
+    if ($b->{'filename'} =~ /^(.*)(\.deb|\.rpm)$/) {
+      $binarylist{$1} = $b;
+    } else {
+      $binarylist{$b->{'filename'}} = $b;
+    }
+  }
+  my @fetch;
+  my @reply;
+
+  local *LOCK;
+  mkdir_p($remotecache);
+  BSUtil::lockopen(\*LOCK, '>>', "$remotecache/lock") || die("$remotecache/lock: $!\n");
+  for my $bin (@binaries) {
+    my $b = $binarylist{$bin};
+    if (!$b || !$b->{'size'} || !$b->{'mtime'}) {
+      push @reply, {'name' => $bin, 'error' => 'not available'};
+      next;
+    }
+    my $cachemd5 = Digest::MD5::md5_hex("$projid/$repoid/$arch/$bin");
+    substr($cachemd5, 2, 0, '/');
+    my @s = stat("$remotecache/$cachemd5");
+    if (!@s || $s[9] != $b->{'mtime'} || $s[7] != $b->{'size'}) {
+      push @fetch, $bin;
+    } else {
+      utime time(), $s[9], "$remotecache/$cachemd5";
+      push @reply, {'name' => $b->{'filename'}, 'filename' => "$remotecache/$cachemd5"};
+    }
+  }
+  my $slot = sprintf("%02x", (int(rand(256))));
+  print "cleaning slot $slot\n";
+  if (-d "$remotecache/$slot") {
+    my $now = time();
+    my $num = 0;
+    for my $f (ls("$remotecache/$slot")) {
+      my @s = stat("$remotecache/$slot/$f");
+      next if $s[8] >= $now - 24*3600;
+      unlink("$remotecache/$slot/$f");
+      $num++;
+    }
+    print "removed $num unused files\n" if $num;
+  }
+  close(LOCK);
+
+  if (@fetch) {
+    my $serialmd5 = Digest::MD5::md5_hex("$projid/$repoid/$arch");
+
+    # serialize this upload
+    my $serial = BSWatcher::serialize("$remotecache/$serialmd5.lock");
+    return undef unless $serial;
+
+    print "fetch: @fetch\n";
+    my %fetch = map {$_ => $binarylist{$_}} @fetch;
+    my $param = {
+      'uri' => "$remoteurl/build/$remoteprojid/$repoid/$arch/_repository",
+      'receiver' => \&BSHTTP::cpio_receiver,
+      'directory' => $remotecache,
+      'map' => "upload$serialmd5:",
+    };
+    mkdir_p($remotecache);
+    my $cpio;
+    if ($BSStdServer::isajax) {
+      $param->{'receiver'} = \&BSHTTP::file_receiver;
+      $param->{'filename'} = "$remotecache/upload$serialmd5.cpio";
+      local *F;
+      if (open(F, '<', $param->{'filename'})) {
+        unlink($param->{'filename'});
+	$cpio = BSHTTP::cpio_receiver(BSHTTP::fd2hdr(\*F), $param);
+	close F;
+      }
+    }
+
+    # work around api bug: only get 50 packages at a time
+    @fetch = splice(@fetch, 0, 50) if !$cpio && @fetch > 50;
+
+    $cpio ||= BSWatcher::rpc($param, undef, "view=cpio", map {"binary=$_"} @fetch);
+    return undef if $BSStdServer::isajax && !$cpio;
+    for my $f (@{$cpio || []}) {
+      my $bin = $f->{'name'};
+      $bin =~ s/^upload.*?://;
+      $bin =~ s/\.(:?rpm|deb)$//;
+      if (!$fetch{$bin}) {
+        unlink("$remotecache/$f->{'name'}");
+	next;
+      }
+      my $cachemd5 = Digest::MD5::md5_hex("$projid/$repoid/$arch/$bin");
+      substr($cachemd5, 2, 0, '/');
+      mkdir_p("$remotecache/".substr($cachemd5, 0, 2));
+      rename("$remotecache/$f->{'name'}", "$remotecache/$cachemd5");
+      push @reply, {'name' => $fetch{$bin}->{'filename'}, 'filename' => "$remotecache/$cachemd5"};
+      delete $fetch{$bin};
+    }
+    BSWatcher::serialize_end($serial);
+
+    if (@{$cpio || []} >= 50) {
+      # work around api bug: get rest
+      return worker_getbinaries($cgi, $projid, $repoid, $arch);
+    }
+
+    for (sort keys %fetch) {
+      push @reply, {'name' => $_, 'error' => 'not available'};
+    }
+  }
+  if ($cgi->{'raw'}) {
+    die("can only transport one binary in raw mode\n") unless @reply == 1;
+    my $f = $reply[0];
+    die("$f->{'name'}: $f->{'error'}\n") if $f->{'error'};
+    die("$f->{'name'}: not found\n") unless $f->{'filename'};
+    BSWatcher::reply_file($f->{'filename'});
+    return undef;
+  }
+  BSWatcher::reply_cpio(\@reply);
+  return undef;
+}
+
+sub worker_lastevents {
+  my ($cgi, $watch) = @_;
+  if (!$cgi->{'start'}) {
+    # just fetch the current event number
+    my $lastev = BSFileDB::fdb_getlast("$eventdir/lastevents", $eventlay);
+    my $lastno = $lastev ? $lastev->{'number'} : 0;
+    my $ret = {'next' => $lastno, 'sync' => 'lost'};
+    return ($ret, $BSXML::events);
+  }
+  if (!$BSStdServer::isajax) {
+    my @args = map {"filter=$_"} @{$watch || []};
+    push @args, "start=$cgi->{'start'}";
+    BSHandoff::handoff($ajaxsocket, '/lastevents', undef, @args);
+    exit(0);
+  }
+  BSWatcher::addfilewatcher("$eventdir/lastevents");
+  my $lastev = BSFileDB::fdb_getlast("$eventdir/lastevents", $eventlay);
+  my $lastno = $lastev ? $lastev->{'number'} : 0;
+  my $nextno = $lastno + 1;
+  my @events;
+  if ($cgi->{'start'} == $lastno) {
+    push @events, $lastev;
+  } elsif ($cgi->{'start'} < $lastno) {
+    # multiple events >= start
+    push @events, BSFileDB::fdb_getall("$eventdir/lastevents", $eventlay);
+    # re-calculate in case something was appended
+    $nextno = $events[-1]->{'number'} + 1 if @events;
+    if (@events && $events[0]->{'number'} > $cgi->{'start'}) {
+      # out of sync!
+      return ({'next' => $nextno, 'sync' => 'lost'}, $BSXML::events);
+    }
+    @events = grep {$_->{'number'} >= $cgi->{'start'}} @events;
+  }
+  if ($watch && @events) {
+    my %watch = map {$_ => 1} @$watch;
+    for my $ev (splice @events) {
+      if ($ev->{'type'} eq 'package') {
+        next unless defined $ev->{'package'};
+        next unless $watch{"package/$ev->{'project'}/$ev->{'package'}"} || $watch{"package/$ev->{'project'}"};
+      } elsif ($ev->{'type'} eq 'project') {
+        next unless $watch{"project/$ev->{'project'}"};
+      } elsif ($ev->{'type'} eq 'repository') {
+        next unless $watch{"repository/$ev->{'project'}/$ev->{'repository'}/$ev->{'arch'}"};
+      } else {
+	next;
+      }
+      push @events, $ev;
+    }
+  }
+  # return a sync reply every 100 events for two reasons
+  # - get rid of old peers
+  # - survive history truncation
+  return undef if $BSStdServer::isajax && !@events && $nextno < $cgi->{'start'} + 100;
+  for (@events) {
+    delete $_->{'time'};
+    delete $_->{'number'};
+  }
+  my $ret = {'next' => $nextno};
+  $ret->{'event'} = \@events if @events;
+  return ($ret, $BSXML::events);
+}
+
+sub newevent {
+  my ($cgi) = @_;
+  my $ev = {};
+  for ('type', 'project', 'package', 'repository', 'arch', 'job') {
+    $ev->{$_} = $cgi->{$_} if defined $cgi->{$_};
+  }
+  addevent($ev);
+  return $BSStdServer::return_ok;
+}
+
+
+##
+#  search interface
+##
+
+sub search {
+  my ($cgi, $in, $match) = @_;
+  # gather all data
+  my $data = [];
+  if ($in eq 'projects') {
+    for my $projid (findprojects()) {
+      my $proj = readproj($projid);
+      push @$data, $proj;
+    }
+  } elsif ($in eq 'packages') {
+    for my $projid (findprojects()) {
+      my @packages = findpackages($projid);
+      for my $packid (@packages) {
+        my $pack = readpack($projid, $packid);
+	$pack->{'project'} = $projid;
+        push @$data, $pack;
+      }
+    }
+  } else {
+    die("'in' parameter needs to be either 'projects' or 'packages'\n");
+  }
+  my $res;
+  if ($cgi->{'values'}) {
+    $data = BSXPath::valuematch($data, $match);
+    $res = {'value' => $data};
+  } else {
+    $data = BSXPath::match($data, $match);
+    if (exists $cgi->{'return'}) {
+      $data = BSXPath::valuematch($data, $cgi->{'return'});
+      $res = {'value' => $data};
+    } elsif ($in eq 'projects') {
+      $res = {'project' => $data};
+    } else {
+      $res = {'package' => $data};
+    }
+  }
+  return ($res, $BSXML::collection);
+}
+
+sub search_proj {
+  my ($cgi, $match, $id) = @_;
+  $match =~ s/^\[(.*)\]$/$1/s;
+  my $data = [];
+  for my $projid (findprojects()) {
+    my $proj = readproj($projid);
+    push @$data, $proj;
+  }
+  $data = BSXPath::match($data, $match);
+  if ($id) {
+    for (@{$data || []}) {
+      $_ = {'name' => $_->{'name'}};
+    }
+  }
+  my $res = {'project' => $data};
+  return ($res, $BSXML::collection);
+}
+
+sub search_pack {
+  my ($cgi, $match, $id) = @_;
+  $match =~ s/^\[(.*)\]$/$1/s;
+  # really ugly hack to speed up needed api call
+  if ($match =~ /^\@project='(.+)' and starts-with\(\@name,'(.+)'\)$/) {
+    my $projid = $1;
+    my $startswith = $2;
+    $projid =~ s/''/'/g;
+    $startswith =~ s/''/'/g;
+    my @packages = findpackages($projid);
+    my $data = [];
+    for my $packid (grep {/^\Q$startswith\E/} @packages) {
+      my $pack = readpack($projid, $packid);
+      $pack->{'project'} = $projid;
+      push @$data, $pack;
+    }
+    my $res = {'package' => $data};
+    return ($res, $BSXML::collection);
+  }
+  my $data = [];
+  for my $projid (findprojects()) {
+    my @packages = findpackages($projid);
+    for my $packid (@packages) {
+      my $pack = readpack($projid, $packid);
+      $pack->{'project'} = $projid;
+      push @$data, $pack;
+    }
+  }
+  $data = BSXPath::match($data, $match);
+  if ($id) {
+    for (@{$data || []}) {
+      $_ = {'name' => $_->{'name'}, 'project' => $_->{'project'}};
+    }
+  }
+  my $res = {'package' => $data};
+  return ($res, $BSXML::collection);
+}
+
+sub search_proj_id {
+  return search_proj(@_, 1);
+}
+
+sub search_pack_id {
+  return search_pack(@_, 1);
+}
+
+
+##
+#  build calls for binary files
+##
+
+sub getworkerstatus {
+  my ($cgi) = @_;
+  my @args;
+  push @args, 'scheduleronly' if $cgi->{'scheduleronly'};
+  push @args, map {"arch=$_"} @{$cgi->{'arch'} || []};
+  my $ws = BSWatcher::rpc("$BSConfig::reposerver/workerstatus", $BSXML::workerstatus, @args);
+  delete $_->{'uri'} for @{$ws->{'idle'}};
+  delete $_->{'uri'} for @{$ws->{'building'}};
+  return ($ws, $BSXML::workerstatus);
+}
+
+sub docommand {
+  my ($cgi, $projid) = @_;
+
+  my %repoidfilter = map {$_ => 1} @{$cgi->{'repository'} || []};
+  my %archfilter = map {$_ => 1} @{$cgi->{'arch'} || []};
+
+  my $proj = readproj($projid);
+  my @prpas;
+  for my $repo (@{$proj->{'repository'} || []}) {
+    next if %repoidfilter && !$repoidfilter{$repo->{'name'}};
+    my @archs = @{$repo->{'arch'} || []};
+    @archs = grep {$archfilter{$_}} @archs if %archfilter;
+    push @prpas, map {"$projid/$repo->{'name'}/$_"} @archs;
+  }
+  die("no repository defined\n") unless @prpas;
+  my @packids = @{$cgi->{'package'} || []};
+  if (@packids) {
+    my %packids = map {$_ => 1} findpackages($projid);
+    my @badpacks = grep {!$packids{$_}} @packids;
+    die("unknown package: @badpacks\n") if @badpacks;
+  } else {
+    @packids = findpackages($projid);
+  }
+  die("no packages defined\n") unless @packids;
+  
+  # XXX FIXME multiple repo handling
+  my $res;
+  for my $rrserver ($BSConfig::reposerver) {
+    my @args;
+    push @args, map {"prpa=$_"} @prpas;
+    push @args, map {"package=$_"} @packids;
+    push @args, map {"code=$_"} @{$cgi->{'code'} || []};
+    push @args, "cmd=$cgi->{'cmd'}";
+    $res = BSWatcher::rpc("$rrserver/_command", undef, @args);
+  }
+  return $res;
+}
+
+sub getrepositorylist {
+  my ($cgi, $projid) = @_;
+  my $proj = readproj($projid);
+  my @res = map {{'name' => $_->{'name'}}} @{$proj->{'repository'} || []};
+  return ({'entry' => \@res}, $BSXML::dir);
+}
+
+sub getarchlist {
+  my ($cgi, $projid, $repoid) = @_;
+  my $proj = readproj($projid);
+  my @repo = grep {$_->{'name'} eq $repoid} @{$proj->{'repository'} || []};
+  die("$repoid: no such repository\n") unless @repo;
+  my @res = map {{'name' => $_}} @{$repo[0]->{'arch'} || []};
+  return ({'entry' => \@res}, $BSXML::dir);
+}
+
+
+##
+#  request name space
+##
+
+sub nextreqid {
+  local *F;
+  mkdir_p($requestsdir);
+  BSUtil::lockopen(*F, '>>', "$requestsdir/.nextid");
+  my $nextid = readstr("$requestsdir/.nextid", 1);
+  $nextid ||= 1;
+  writestr("$requestsdir/.nextid.new", "$requestsdir/.nextid", $nextid + 1);
+  close F;
+  return $nextid;
+}
+
+###!!! obs-git: uses BSDB::calls, but it looks OK
+sub writereq {
+  my ($oreq, $req) = @_;
+
+  my $id;
+  $id = $req->{'id'} if $req;
+  $id = $oreq->{'id'} if $oreq && !defined($id);
+  die unless defined $id;
+  my $name = $id;
+  if ($req) {
+    writexml("$requestsdir/.$name", "$requestsdir/$name", $req, $BSXML::request);
+  }
+  mkdir_p($reqindexdb);
+  my $db = BSDB::opendb($reqindexdb, '');
+  $db->{'noindex'} = {'id' => 1};
+  $db->updateindex($id, $oreq || {}, $req || {});
+  if (!$req) {
+    unlink("$requestsdir/$name");
+  }
+}
+
+sub getrequestlist {
+  my ($cgi) = @_;
+
+  my @requests = map {{'name' => $_}} sort(grep {!/^\./} ls($requestsdir));
+  return ({'entry' => \@requests}, $BSXML::dir);
+};
+
+sub postrequest {
+  my ($cgi, $id) = @_;
+
+  my $cmd = $cgi->{'cmd'};
+  die("unknown command '$cmd'\n") unless $cmd eq 'changestate';
+  die("no new state\n") unless $cgi->{'newstate'};
+  my $oreq = readxml("$requestsdir/$id", $BSXML::request, 1);
+  die("no such request '$id'\n") unless $oreq;
+  my $req = Storable::dclone($oreq);	# deep clone
+  die unless $req->{'id'} eq $id;
+  my $oldstate = $req->{'state'};
+  push @{$req->{'history'}}, $oldstate;
+  $req->{'state'} = {'name' => $cgi->{'newstate'}};
+  $req->{'state'}->{'who'} = $cgi->{'user'} if defined $cgi->{'user'};
+  $req->{'state'}->{'comment'} = $cgi->{'comment'} if defined $cgi->{'comment'};
+  my @lt = localtime(time());
+  $req->{'state'}->{'when'} = sprintf("%04d-%02d-%02dT%02d:%02d:%02d", $lt[5] + 1900, $lt[4] + 1, @lt[3,2,1,0]);
+  writereq($oreq, $req);
+  $req->{'oldstate'} = $oldstate;
+  BSHermes::notify( "SRCSRV_REQUEST_STATECHANGE", BSHermes::requestParams($req, $cgi->{'user'}));
+  return $BSStdServer::return_ok;
+}
+
+sub getrequest {
+  my ($cgi, $id) = @_;
+  my $req = readxml("$requestsdir/$id", $BSXML::request, 1);
+  die("no such request '$id'\n") unless $req;
+  return ($req, $BSXML::request);
+}
+
+sub putrequest {
+  my ($cgi, $id) = @_;
+  my $reqxml = BSServer::read_data(1000000);
+  my $req = XMLin($BSXML::request, $reqxml);
+  BSVerify::verify_request($req);
+  my $oreq = readxml("$requestsdir/$id", $BSXML::request, 1);
+  die("no such request '$id'\n") unless $oreq;
+  $req->{'id'} = $id;
+  $req->{'history'} = [ @{$oreq->{'history'} || []} ];
+  push @{$req->{'history'}}, $oreq->{'state'};
+  $req->{'state'}->{'who'} = $cgi->{'user'} if defined $cgi->{'user'};
+  my @lt = localtime(time());
+  $req->{'state'}->{'when'} = sprintf("%04d-%02d-%02dT%02d:%02d:%02d", $lt[5] + 1900, $lt[4] + 1, @lt[3,2,1,0]);
+  writereq($oreq, $req);
+  BSHermes::notify("SRCSRV_REQUEST_CHANGE", BSHermes::requestParams($req, $cgi->{'user'}));
+  return $BSStdServer::return_ok;
+}
+
+sub delrequest {
+  my ($cgi, $id) = @_;
+  my $oreq = readxml("$requestsdir/$id", $BSXML::request, 1);
+  die("no such request '$id'\n") unless $oreq;
+  die unless $oreq->{'id'} eq $id;
+  writereq($oreq, undef);
+  BSHermes::notify("SRCSRV_REQUEST_DELETE", BSHermes::requestParams($oreq, $cgi->{'user'}));
+  return $BSStdServer::return_ok;
+}
+
+sub fetchreq {
+  my ($db, $key) = @_;
+  my $req = readxml("$requestsdir/$key", $BSXML::request, 1) || {};
+  $req->{'id'} = $key;
+  return $req;
+}
+
+###!!! obs-git: uses BSDB:: calls, but it looks OK here
+sub search_request {
+  my ($cgi, $match) = @_;
+  my $db = BSDB::opendb($reqindexdb, '');
+  $db->{'noindex'} = {'id' => 1};
+  $db->{'allkeyspath'} = 'type';
+  $db->{'fetch'} = \&fetchreq;
+  my $rootnode = BSXPathKeys::node($db, '');
+  my $data = BSXPath::match($rootnode, $match) || [];
+  my $res = {'request' => $data};
+  return ($res, $BSXML::collection);
+}
+
+
+##
+#  other stuff
+##
+
+sub getajaxstatus {
+  my ($cgi) = @_;
+  if (!$BSStdServer::isajax) {
+    BSHandoff::handoff($ajaxsocket, '/ajaxstatus');
+    exit(0);
+  }
+  my $r = BSWatcher::getstatus();
+  return ($r, $BSXML::ajaxstatus);
+}
+
+sub getrepository {
+  my ($cgi, $projid, $repoid) = @_;
+  my $proj = readproj($projid);
+  my $repo = (grep {$_->{'name'} eq $repoid} @{$proj->{'repository'} || []})[0];
+  die("$repoid: no such repository\n") unless $repo;
+  return ($repo, $BSXML::repo);
+}
+
+sub isascii {
+  my ($file) = @_;
+  local *F;
+  open(F, '<', $file) || die("$file: $!\n");
+  my $buf = '';
+  sysread(F, $buf, 4096);
+  close F;
+  return 1 unless $buf =~ /[\000-\010\016-\037]/s;
+  return 0;
+}
+
+sub rundiff {
+  my ($file1, $file2, $label, $outfile) = @_;
+  my $pid;
+  if (!($pid = xfork())) {
+    if (!open(STDOUT, '>>', $outfile)) {
+      print STDERR "$outfile: $!\n";
+      exit(2);
+    }
+    exec('diff', '-up', '--label', "$label.orig", '--label', $label, $file1, $file2);
+    exit(2);
+  }
+  waitpid($pid, 0) == $pid || die("waitpid $pid: $!\n");
+  my $status = $?;
+  return 1 if $status == 0 || $status == 0x100;
+  return undef;
+}

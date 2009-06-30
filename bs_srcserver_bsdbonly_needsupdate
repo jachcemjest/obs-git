@@ -1,0 +1,43 @@
+#!/usr/bin/perl -w
+
+use strict;
+
+#make diffs between 'checked out' packages - need to handle cases where diffs are made from different backends
+sub sourcediff {
+  my ($cgi, $projid, $packid) = @_;
+
+  my $oprojid = exists($cgi->{'oproject'}) ? $cgi->{'oproject'} : $projid;
+  my $opackid = exists($cgi->{'opackage'}) ? $cgi->{'opackage'} : $packid;
+
+  my $rev = getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
+  die("unknown project/package\n") unless $rev;
+  my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
+  my $orev = $cgi->{'orev'};
+  if ($projid eq $oprojid && $packid eq $opackid && !defined($cgi->{'orev'}) && $rev->{'rev'}) {
+    $orev = $rev->{'rev'} - 1;
+  }
+  $orev = getrev($oprojid, $opackid, defined($orev) ? $orev : 'latest');
+  die("unknown other project/package\n") unless $orev;
+  my $ofiles = lsrep($oprojid, $opackid, $orev->{'srcmd5'});
+  if ($cgi->{'expand'} || ($files->{'_link'} && !$ofiles->{'_link'}) || ($ofiles->{'_link'} && !$files->{'_link'})) {
+    # expand links
+    if ($files->{'_link'}) {
+      my %lrev = (%$rev, 'name' => $packid);
+      $files = handlelinks($projid, \%lrev, $files, $rev);
+      die("bad link: $files\n") unless ref $files;
+      delete $files->{'/LINK'};
+      delete $files->{'/LOCAL'};
+    }
+    if ($ofiles->{'_link'}) {
+      my %olrev = (%$orev, 'name' => $opackid);
+      $ofiles = handlelinks($oprojid, \%olrev, $ofiles, $orev);
+      die("bad link: $ofiles\n") unless ref $ofiles;
+      delete $ofiles->{'/LINK'};
+      delete $ofiles->{'/LOCAL'};
+    }
+  }
+  my $tmpdir = "$srcrep/:upload/srcdiff$$";
+  my $d = BSSrcdiff::diff("$srcrep/$opackid", $ofiles, $orev->{'rev'}, "$srcrep/$packid", $files, $rev->{'rev'}, 200, 16000, $tmpdir, $cgi->{'unified'});
+  return ($d, 'Content-Type: text/plain');
+}
+

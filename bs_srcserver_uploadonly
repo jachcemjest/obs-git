@@ -1,0 +1,104 @@
+#!/usr/bin/perl -w
+
+use strict;
+
+sub createkey {
+  my ($cgi, $projid) = @_;
+  die("don't know how to create a key\n") unless $BSConfig::sign;
+  die("project $projid does not exist\n") unless -s "$projectsdir/$projid.xml";
+  mkdir_p("$srcrep/:upload");
+  local *F;
+  my $pubkey = '';
+  my @keyargs = ('dsa@1024', '800');
+  my @signargs;
+  push @signargs, '--project', $projid if $BSConfig::sign_project;
+  my $obsname = $BSConfig::obsname || 'build.opensuse.org';
+  open(F, '-|', $BSConfig::sign, @signargs, '-P', "$srcrep/:upload/signkey.$$", '-g', @keyargs , "$projid OBS Project", "$projid\@$obsname") || die("$BSConfig::sign: $!\n");
+  1 while sysread(F, $pubkey, 4096, length($pubkey));
+  close(F) || die("$BSConfig::sign: $?\n");
+  die("sign did not create signkey\n") unless -s "$srcrep/:upload/signkey.$$";
+  mkdir_p("$projectsdir/$projid.pkg");
+  writestr("$srcrep/:upload/pubkey.$$", "$projectsdir/$projid.pkg/_pubkey", $pubkey);
+  if (!rename("$srcrep/:upload/signkey.$$", "$projectsdir/$projid.pkg/_signkey")) {
+    unlink("$projectsdir/$projid/_pubkey");
+    die("rename $srcrep/:upload/signkey.$$ $projectsdir/$projid.pkg/_signkey: $!\n");
+  }
+  return $BSStdServer::return_ok;
+}
+
+sub putproject {
+  my ($cgi, $projid) = @_;
+  mkdir_p("$srcrep/:upload");
+  my $uploaded = BSServer::read_file("$srcrep/:upload/$$");
+  die("upload failed\n") unless $uploaded;
+  my $proj = readxml("$srcrep/:upload/$$", $BSXML::proj);
+  BSVerify::verify_proj($proj, $projid);
+  writexml("$srcrep/:upload/$$.2", undef, $proj, $BSXML::proj);
+  unlink("$srcrep/:upload/$$");
+  if (! -e "$projectsdir/$projid.xml") {
+    BSHermes::notify("SRCSRV_CREATE_PROJECT", { "project" => $projid });
+  } else {
+    BSHermes::notify("SRCSRV_UPDATE_PROJECT", { "project" => $projid });
+  }
+  rename("$srcrep/:upload/$$.2", "$projectsdir/$projid.xml") || die("rename to $projectsdir/$projid.xml: $!\n");
+  if ($BSConfig::forceprojectkeys) {
+    my ($sk) = getsignkey({}, $projid);
+    createkey({}, $projid) if $sk eq '';
+  }
+  notify_repservers('project', $projid);
+
+  $proj = readproj($projid);
+  return ($proj, $BSXML::proj);
+}
+
+sub putprojectconfig {
+  my ($cgi, $projid) = @_;
+  my $proj = readproj($projid);
+  mkdir_p("$srcrep/:upload");
+  my $uploaded = BSServer::read_file("$srcrep/:upload/$$");
+  die("upload failed\n") unless $uploaded;
+  if (-s "$srcrep/:upload/$$") {
+    rename("$srcrep/:upload/$$", "$projectsdir/$projid.conf") || die("rename $srcrep/:upload/$$ $projectsdir/$projid.conf: $!\n");
+  } else {
+    unlink("$projectsdir/$projid.conf") || die("unlink $projectsdir/$projid.conf: $!\n");
+  }
+  notify_repservers('project', $projid);
+  BSHermes::notify("SRCSRV_UPDATE_PROJECT_CONFIG", { "project" => $projid });
+
+  return $BSStdServer::return_ok;
+}
+
+sub putpackage {
+  my ($cgi, $projid, $packid) = @_;
+  mkdir_p("$srcrep/:upload");
+  my $uploaded = BSServer::read_file("$srcrep/:upload/$$");
+  die("upload failed\n") unless $uploaded;
+  my $pack = readxml("$srcrep/:upload/$$", $BSXML::pack);
+  BSVerify::verify_pack($pack, $packid);
+  die("package contains revision data\n") if grep {exists $pack->{$_}} @$srcrevlay;
+  # XXX
+  # delete rev stuff, just in case...
+  # delete $pack->{$_} for @$srcrevlay;
+  # $pack->{'name'} = $packid;
+  writexml("$srcrep/:upload/$$.2", undef, $pack, $BSXML::pack);
+  unlink("$srcrep/:upload/$$");
+  my $proj = readproj($projid);
+  die("package '$packid' is read-only\n") if ($packid =~ /^_product:/) && ! -e "$projectsdir/$projid.pkg/$packid.xml";
+  mkdir_p("$projectsdir/$projid.pkg");
+  if (! -e "$projectsdir/$projid.pkg/$packid.xml") {
+    BSHermes::notify("SRCSRV_CREATE_PACKAGE", { "project" => $projid, "package" => $packid});
+  } else {
+    BSHermes::notify("SRCSRV_UPDATE_PACKAGE", { "project" => $projid, "package" => $packid});
+  }
+  rename("$srcrep/:upload/$$.2", "$projectsdir/$projid.pkg/$packid.xml") || die("rename to $projectsdir/$projid.pkg/$packid.xml: $!\n");
+#  my %packages = map {$_->{'name'} => 1} @{$proj->{'package'} || []};
+#  if (!$packages{$packid}) {
+#    # a new package! add id to project data
+#    push @{$proj->{'package'}}, {'name' => $packid};
+#    writexml("$srcrep/:upload/$$.3", "$projectsdir/$projid.xml", $proj, $BSXML::proj);
+#  }
+  notify_repservers('package', $projid, $packid);
+  $pack = readpack($projid, $packid);
+  return ($pack, $BSXML::pack);
+}
+
