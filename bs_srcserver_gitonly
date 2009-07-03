@@ -1,3 +1,5 @@
 #!/usr/bin/perl -w
 
+package bs_srcserver_gitonly;
+
 use strict;

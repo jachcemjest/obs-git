@@ -1,15 +1,17 @@
 #!/usr/bin/perl -w
 
+package bs_srcserver_common_notsure;
+
 use strict;
 
-#ensures the files are stored locally, remote_getrev is accessing source repo
+#ensures the files are stored locally, bs_srcserver_bsdbonly::remote_getrev is accessing source repo
 sub getrev {
   my ($projid, $packid, $rev) = @_;
   die("bad projid\n") if $projid =~ /\// || $projid =~ /^\./;
   return {'srcmd5' => 'pattern', 'rev' => 'pattern'} if $packid eq '_pattern';
   die("bad packid\n") if $packid =~ /\// || $packid =~ /^\./;
   if (! -e "$projectsdir/$projid.pkg/$packid.xml") {
-    return remote_getrev($projid, $packid, $rev);
+    return bs_srcserver_bsdbonly::remote_getrev($projid, $packid, $rev);
   }
   undef $rev if $rev && ($rev eq 'latest' || $rev eq 'build');
   undef $rev if $rev && $rev eq 'upload' && ! -e "$projectsdir/$projid.pkg/$packid.upload-MD5SUMS";
@@ -31,10 +33,10 @@ sub getrev {
 }
 
 # find matching .spec/.dsc/.kiwi file depending on packid and/or repoid
-###!!! obs-git: depends on lsrep, but should not need update if lsrep will be updated
+###!!! obs-git: depends on bs_srcserver_bsdbonly::lsrep, but should not need update if bs_srcserver_bsdbonly::lsrep will be updated
 sub findfile {
   my ($projid, $packid, $repoid, $ext, $files) = @_;
-  $files = lsrep($projid, $packid, $files) unless ref $files;
+  $files = bs_srcserver_bsdbonly::lsrep($projid, $packid, $files) unless ref $files;
   return ($files->{"$packid-$repoid.$ext"}, "$packid-$repoid.$ext") if defined($repoid) && $files->{"$packid-$repoid.$ext"};
   # 28.4.2009 mls: deleted "&& defined($repoid)"
   return ($files->{"$packid.$ext"}, "$packid.$ext") if $files->{"$packid.$ext"};
@@ -53,16 +55,16 @@ sub findfile {
   return (undef, undef);
 }
 
-###!!! obs-git: depends on keeplink function and some other that are bsdb-specific, but could be enough to rewrite these
+###!!! obs-git: depends on bs_srcserver_bsdbonly_links::keeplink function and some other that are bsdb-specific, but could be enough to rewrite these
 sub sourcecommit {
   my ($cgi, $projid, $packid) = @_;
   my $rev = getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
   die("unknown project/package\n") unless $rev;
-  my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
-  $files = keeplink($cgi, $projid, $packid, $files) if $cgi->{'keeplink'};
+  my $files = bs_srcserver_bsdbonly::lsrep($projid, $packid, $rev->{'srcmd5'});
+  $files = bs_srcserver_bsdbonly_links::keeplink($cgi, $projid, $packid, $files) if $cgi->{'bs_srcserver_bsdbonly_links::keeplink'};
   my $user = defined($cgi->{'user'}) ? $cgi->{'user'} : 'unknown';
   my $comment = defined($cgi->{'comment'}) ? $cgi->{'comment'} : '';
-  $rev = addrev($projid, $packid, $files, $user, $comment);
+  $rev = bs_srcserver_bsdbonly::addrev($projid, $packid, $files, $user, $comment);
   return ($rev, $BSXML::revision);
 }
 
@@ -85,7 +87,7 @@ sub fetchremoteproj {
 }
 
 ###!!! obs-git: not sure if does not depend on some subroutine that accesses local repo
-sub expandsearchpath {
+sub expandbs_srcserver_common::searchpath {
   my ($projid, $repoid) = @_;
   my %done;
   my @ret;
@@ -98,16 +100,16 @@ sub expandsearchpath {
     if (!@path) {
       last if $done{"/$prp"};
       my ($pid, $tid) = ($t->{'project'}, $t->{'repository'});
-      my $proj = readproj($pid, 1);
+      my $proj = bs_srcserver_common::readproj($pid, 1);
       if (!$proj) { 
-        $proj = remoteprojid($pid);
+        $proj = bs_srcserver_common::remoteprojid($pid);
         $proj = fetchremoteproj($proj, $pid);
         die("project '$pid' does not exist\n") unless $proj;
         my @repo = grep {$_->{'name'} eq $tid} @{$proj->{'repository'} || []};
         if (@repo && $repo[0]->{'path'}) {
           for my $pathel (@{$repo[0]->{'path'}}) {
             # map projects to remote
-            $pathel->{'project'} = maptoremote($proj, $pathel->{'project'});
+            $pathel->{'project'} = bs_srcserver_common::maptoremote($proj, $pathel->{'project'});
           }
         }
       }
@@ -123,7 +125,7 @@ sub expandsearchpath {
 sub postrelsync {
   my ($cgi, $projid, $repoid, $arch) = @_;
 
-  my $proj = checkprojrepoarch($projid, $repoid, $arch);
+  my $proj = bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch);
   my $repo = (grep {$_->{'name'} eq $repoid} @{$proj->{'repository'} || []})[0];
   my $relsyncdata = BSServer::read_data(10000000);
   for my $a (@{$repo->{'arch'} || []}) {
@@ -147,7 +149,7 @@ sub postrelsync {
 ###!!! obs-git: uses some RPC call - not sure if it doesn't access local repo
 sub getrelsync {
   my ($cgi, $projid, $repoid, $arch) = @_;
-  checkprojrepoarch($projid, $repoid, $arch);
+  bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch);
   my $param = {
     'uri' => "$BSConfig::reposerver/build/$projid/$repoid/$arch/_relsync",
     'ignorestatus' => 1,
@@ -171,7 +173,7 @@ sub fetchremoteconfig {
 }
 
 ###!!! obs-git: uses some BSDB:: calls, but it should have nothing to do with source repo
-sub search_published_updatedb {
+sub bs_srcserver_common::search_bs_srcserver_common::published_updatedb {
   my ($cgi) = @_;
   die("unknown command '$cgi->{'cmd'}'\n") unless $cgi->{'cmd'} eq 'updatedb';
   my $data = BSServer::read_data();
@@ -238,14 +240,14 @@ sub binary_key_to_data {
     'filename' => $binary,
     'filepath' => $key,
   };
-  $res->{'path'} = $repoinfo->{'prpsearchpath'} if $repoinfo->{'prpsearchpath'};
+  $res->{'path'} = $repoinfo->{'prpbs_srcserver_common::searchpath'} if $repoinfo->{'prpbs_srcserver_common::searchpath'};
   $res->{'package'} = $repoinfo->{'binaryorigins'}->{"$arch/$binary"} if defined $repoinfo->{'binaryorigins'}->{"$arch/$binary"};
   $res->{'baseproject'} = $res->{'path'}->[-1]->{'project'} if $res->{'path'};
   return $res;
 }
 
 ###!!! obs-git: uses some BSDB:: calls, but it should have nothing to do with source repo
-sub search_published_binary_id {
+sub bs_srcserver_common::search_bs_srcserver_common::published_binary_id {
   my ($cgi, $match) = @_;
   my $binarydb = BSDB::opendb($extrepodb, 'binary');
   $binarydb->{'allkeyspath'} = 'name';
@@ -286,7 +288,7 @@ sub pattern_key_to_data {
 }
 
 ###!!! obs-git: uses some BSDB:: calls, but it should have nothing to do with source repo
-sub search_published_pattern_id {
+sub bs_srcserver_common::search_bs_srcserver_common::published_pattern_id {
   my ($cgi, $match) = @_;
   my $patterndb = BSDB::opendb($extrepodb, 'pattern');
   $patterndb->{'noindex'} = {'project' => 1, 'repository' => 1};
@@ -323,7 +325,7 @@ sub getresult {
   my %view = map {$_ => 1} @{$cgi->{'view'} || ['status']};
   my %code = map {$_ => 1} @{$cgi->{'code'} || []};
 
-  my $proj = readproj($projid);
+  my $proj = bs_srcserver_common::readproj($projid);
   if ($cgi->{'repository'}) {
     my %knownrepoids = map {$_->{'name'} => 1} @{$proj->{'repository'} || []};
     for (@{$cgi->{'repository'}}) {
@@ -331,7 +333,7 @@ sub getresult {
     }
   }
   if ($cgi->{'package'}) {
-    my %knownpackids = map {$_ => 1} findpackages($projid);
+    my %knownpackids = map {$_ => 1} bs_srcserver_common::findpackages($projid);
     for (@{$cgi->{'package'}}) {
       die("unknown package '$_'\n") if !$knownpackids{$_};
     }
@@ -396,7 +398,7 @@ sub getresult {
 sub getbuilddepinfo {
   my ($cgi, $projid, $repoid, $arch) = @_;
 
-  checkprojrepoarch($projid, $repoid, $arch);
+  bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch);
   my @args;
   push @args, map {"package=$_"} @{$cgi->{'package'} || []};
   my $res = BSWatcher::rpc("$BSConfig::reposerver/build/$projid/$repoid/$arch/_builddepinfo", $BSXML::builddepinfo, @args);
@@ -407,7 +409,7 @@ sub getbuilddepinfo {
 sub getjobhistory {
   my ($cgi, $projid, $repoid, $arch) = @_;
 
-  checkprojrepoarch($projid, $repoid, $arch);
+  bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch);
   my @args;
   push @args, map {"package=$_"} @{$cgi->{'package'} || []};
   push @args, map {"code=$_"} @{$cgi->{'code'} || []};
@@ -430,7 +432,7 @@ sub postrepo {
 sub getbinarylist {
   my ($cgi, $projid, $repoid, $arch, $packid) = @_;
 
-  my $proj = checkprojrepoarch($projid, $repoid, $arch, 1);
+  my $proj = bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch, 1);
   my $view = $cgi->{'view'};
   my @args;
   push @args, "view=$view" if $view;
@@ -458,7 +460,7 @@ sub getbinarylist {
 ###!!! obs-git: uses some RPC call - not sure if it doesn't access local repo
 sub getbuildinfo_post {
   my ($cgi, $projid, $repoid, $arch, $packid) = @_;
-  checkprojrepoarch($projid, $repoid, $arch);
+  bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch);
   my @args;
   push @args, map {"add=$_"} @{$cgi->{'add'} || []};
   my $param = {
@@ -474,7 +476,7 @@ sub getbuildinfo_post {
 ###!!! obs-git: uses some RPC call - not sure if it doesn't access local repo
 sub getbuildinfo {
   my ($cgi, $projid, $repoid, $arch, $packid) = @_;
-  checkprojrepoarch($projid, $repoid, $arch);
+  bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch);
   my @args;
   push @args, 'internal=1' if $cgi->{'internal'};
   push @args, map {"add=$_"} @{$cgi->{'add'} || []};
@@ -485,7 +487,7 @@ sub getbuildinfo {
 ###!!! obs-git: uses some RPC call - not sure if it doesn't access local repo
 sub getbuildreason {
   my ($cgi, $projid, $repoid, $arch, $packid) = @_;
-  checkprojrepoarch($projid, $repoid, $arch);
+  bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch);
   my $reason = BSWatcher::rpc("$BSConfig::reposerver/build/$projid/$repoid/$arch/$packid/_reason", $BSXML::buildreason);
   return ($reason, $BSXML::buildreason);
 }
@@ -493,7 +495,7 @@ sub getbuildreason {
 ###!!! obs-git: uses some RPC call - not sure if it doesn't access local repo
 sub getbuildstatus {
   my ($cgi, $projid, $repoid, $arch, $packid) = @_;
-  checkprojrepoarch($projid, $repoid, $arch);
+  bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch);
   my $status = BSWatcher::rpc("$BSConfig::reposerver/build/$projid/$repoid/$arch/$packid/_status", $BSXML::buildstatus);
   return ($status, $BSXML::buildstatus);
 }
@@ -501,7 +503,7 @@ sub getbuildstatus {
 ###!!! obs-git: uses some RPC call - not sure if it doesn't access local repo
 sub getbuildhistory {
   my ($cgi, $projid, $repoid, $arch, $packid) = @_;
-  checkprojrepoarch($projid, $repoid, $arch);
+  bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch);
   my $buildhist = BSWatcher::rpc("$BSConfig::reposerver/build/$projid/$repoid/$arch/$packid/_history", $BSXML::buildhist);
   return ($buildhist, $BSXML::buildhist);
 }
@@ -509,7 +511,7 @@ sub getbuildhistory {
 ###!!! obs-git: uses some RPC call - not sure if it doesn't access local repo
 sub getbinary {
   my ($cgi, $projid, $repoid, $arch, $packid, $filename) = @_;
-  my $proj = checkprojrepoarch($projid, $repoid, $arch, 1);
+  my $proj = bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch, 1);
   if ($proj->{'remoteurl'}) {
     # hack: reroute to /getbinaries so that our local cache is used
     die("can only access remote _repository files\n") unless $packid eq '_repository';
@@ -535,7 +537,7 @@ sub getbinary {
 ###!!! obs-git: uses some RPC call - not sure if it doesn't access local repo
 sub putbinary {
   my ($cgi, $projid, $repoid, $arch, $filename) = @_;
-  checkprojrepoarch($projid, $repoid, $arch);
+  bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch);
   my @args;
   push @args, 'ignoreolder=1' if $cgi->{'ignoreolder'};
   push @args, 'wipe=1' if $cgi->{'wipe'};

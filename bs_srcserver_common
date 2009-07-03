@@ -1,5 +1,7 @@
 #!/usr/bin/perl -w
 
+package bs_srcserver_common;
+
 use strict;
 
 sub readproj {
@@ -27,7 +29,7 @@ sub getprojectlist {
 sub projectcmd {
   my ($cgi, $projid) = @_;
   my $cmd = $cgi->{'cmd'};
-  return createkey($cgi, $projid) if $cmd eq 'createkey';
+  return bs_srcserver_uploadonly::createkey($cgi, $projid) if $cmd eq 'bs_srcserver_uploadonly::createkey';
   die("unknown command '$cmd'\n");
 }
 
@@ -242,10 +244,10 @@ sub findprojectpatchname {
 ###!!! obs-git: this function is common, but depends on many others - that are specific to bsdb
 sub sourcecmd {
   my ($cgi, $projid, $packid) = @_;
-  return sourcediff($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'diff';
-  return sourcecommit($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'commit';
-  return sourcecommitfilelist($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'commitfilelist';
-  return sourcecopy($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'copy';
+  return bs_srcserver_bsdbonly_needsupdate::sourcediff($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'diff';
+  return bs_srcserver_common_notsure::sourcecommit($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'commit';
+  return bs_srcserver_bsdbonly::bs_srcserver_common_notsure::sourcecommitfilelist($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'commitfilelist';
+  return bs_srcserver_bsdbonly::sourcecopy($cgi, $projid, $packid) if $cgi->{'cmd'} eq 'copy';
   if ($cgi->{'cmd'} eq 'deleteuploadrev') {
     unlink("$projectsdir/$projid.pkg/$packid.upload-MD5SUMS");
     return $BSStdServer::return_ok;
@@ -285,7 +287,7 @@ sub getpackage {
   return ($pack, $BSXML::pack);
 }
 
-###!!! obs-git: uses expandproduct function which is bsdb only
+###!!! obs-git: uses bs_srcserver_bsdbonly::expandproduct function which is bsdb only
 sub delpackage {
   my ($cgi, $projid, $packid) = @_;
   die("project '$projid' does not exist\n") unless -e "$projectsdir/$projid.xml";
@@ -295,7 +297,7 @@ sub delpackage {
   unlink("$projectsdir/$projid.pkg/$packid.rev");
   unlink("$projectsdir/$projid.pkg/$packid.xml");
   if ($packid eq '_product') {
-    expandproduct($projid, $packid, undef);
+    bs_srcserver_bsdbonly::expandproduct($projid, $packid, undef);
   }
   notify_repservers('package', $projid, $packid);
   BSHermes::notify("SRCSRV_DELETE_PACKAGE", { "project" => $projid, "package" => $packid });
@@ -390,7 +392,7 @@ sub getconfig {
       $c = readstr("$projectsdir/$p.conf");
     } elsif (!-e "$projectsdir/$p.xml") {
       my $proj = remoteprojid($p);
-      $c = fetchremoteconfig($proj, $p);
+      $c = bs_srcserver_common_notsure::fetchremoteconfig($proj, $p);
     }
     next unless defined $c;
     $config .= "\n### from $p\n";

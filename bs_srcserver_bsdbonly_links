@@ -1,5 +1,7 @@
 #!/usr/bin/perl -w
 
+package bs_srcserver_bsdbonly_links;
+
 use strict;
 
 #this function is probably not used outside link handling, but needs to be checked
@@ -171,9 +173,9 @@ sub applylink {
     $log ||= "unknown error";
     return $log;
   }
-  my $flnk = lsrep($lprojid, $lpackid, $llnk->{'srcmd5'});
+  my $flnk = bs_srcserver_bsdbonly::lsrep($lprojid, $lpackid, $llnk->{'srcmd5'});
   die("applylink: $llnk->{'package'}/$llnk->{'srcmd5'}: nothing known\n") unless $flnk;
-  my $fsrc = lsrep($lsrc->{'project'}, $lsrc->{'package'}, $lsrc->{'srcmd5'});
+  my $fsrc = bs_srcserver_bsdbonly::lsrep($lsrc->{'project'}, $lsrc->{'package'}, $lsrc->{'srcmd5'});
   die("applylink: $lsrc->{'package'}/$lsrc->{'srcmd5'}: nothing known\n") unless $fsrc;
   delete $fsrc->{'/LINK'};
   delete $fsrc->{'/LOCAL'};
@@ -425,7 +427,7 @@ sub handlelinks {
     # record link target for projpack
     push @{$pinfo->{'linked'}}, {'project' => $projid, 'package' => $packid};
     eval {
-      $lrev = getrev($projid, $packid, $l->{'rev'});
+      $lrev = bs_srcserver_common_notsure::getrev($projid, $packid, $l->{'rev'});
     };
     if ($@) {
       my $error = $@;
@@ -435,7 +437,7 @@ sub handlelinks {
     return "linked package '$packid' does not exist in project '$projid'" unless $lrev;
     return "linked package '$packid' is empty" if $lrev->{'srcmd5'} eq 'empty';
     return "linked package '$packid' is strange" unless $lrev->{'srcmd5'} =~ /^[0-9a-f]{32}$/;
-    $files = lsrep($projid, $packid, $lrev->{'srcmd5'});
+    $files = bs_srcserver_bsdbonly::lsrep($projid, $packid, $lrev->{'srcmd5'});
     return 'linked package is not in repository' unless $files;
     my $cicount = $l->{'cicount'} || 'add';
     if ($cicount eq 'copy') {
@@ -474,7 +476,7 @@ sub handlelinks {
   $packid = $linkinfo[0]->{'package'};
   shift @linkinfo;
   $pinfo->{'srcmd5'} = $md5;
-  $files = lsrep($projid, $packid, $md5);
+  $files = bs_srcserver_bsdbonly::lsrep($projid, $packid, $md5);
   my $meta = '';
   for (sort keys %$files) {
     $meta .= "$files->{$_}  $_\n" if $_ ne '/LINK' && $_ ne '/LOCAL';
@@ -496,8 +498,8 @@ sub keeplink {
   my $repair = $cgi->{'repairlink'};
   return $files if !defined($files) || !%$files;
   return $files if $files->{'_link'};
-  my $orev = getrev($projid, $packid, 'latest');
-  my $ofilesl = lsrep($projid, $packid, $orev->{'srcmd5'});
+  my $orev = bs_srcserver_common_notsure::getrev($projid, $packid, 'latest');
+  my $ofilesl = bs_srcserver_bsdbonly::lsrep($projid, $packid, $orev->{'srcmd5'});
   return $files unless $ofilesl && $ofilesl->{'_link'};
   my $l = readxml("$srcrep/$packid/$ofilesl->{'_link'}-_link", $BSXML::link);
   my $changedlink = 0;
@@ -549,10 +551,10 @@ sub keeplink {
   my $ltgtpackid = defined($l->{'package'}) ? $l->{'package'} : $packid;
   my $ltgtfiles;
   if ($ltgtsrcmd5) {
-    $ltgtfiles = lsrep($ltgtprojid, $ltgtpackid, $ltgtsrcmd5);
+    $ltgtfiles = bs_srcserver_bsdbonly::lsrep($ltgtprojid, $ltgtpackid, $ltgtsrcmd5);
   } else {
-    my $ltgtrev = getrev($ltgtprojid, $ltgtpackid, $linkrev || $l->{'rev'});
-    $ltgtfiles = lsrep($ltgtprojid, $ltgtpackid, $ltgtrev->{'srcmd5'});
+    my $ltgtrev = bs_srcserver_common_notsure::getrev($ltgtprojid, $ltgtpackid, $linkrev || $l->{'rev'});
+    $ltgtfiles = bs_srcserver_bsdbonly::lsrep($ltgtprojid, $ltgtpackid, $ltgtrev->{'srcmd5'});
     my %ltgtolrev = (%$ltgtrev, 'name' => $ltgtpackid);
     $ltgtfiles = handlelinks($ltgtprojid, \%ltgtolrev, $ltgtfiles, $ltgtrev) if $ltgtfiles->{'_link'};
     $ltgtsrcmd5 = $ltgtolrev{'srcmd5'};
@@ -626,8 +628,8 @@ sub keeplink {
     $lchanged = 1;
   }
   if (-s "$srcrep/:upload/$$") {
-    my $ppatch = findprojectpatchname($nfiles);
-    $nfiles->{$ppatch} = putinsrcrep($projid, $packid, "$srcrep/:upload/$$", $ppatch);
+    my $ppatch = bs_srcserver_common::findprojectpatchname($nfiles);
+    $nfiles->{$ppatch} = bs_srcserver_bsdbonly::putinsrcrep($projid, $packid, "$srcrep/:upload/$$", $ppatch);
     push @{$l->{'patches'}->{''}}, {'apply' => {'name' => $ppatch}};
     $lchanged = 1;
   } else {
@@ -640,7 +642,7 @@ sub keeplink {
   }
   if ($lchanged) {
     writexml("$srcrep/:upload/$$", undef, $l, $BSXML::link);
-    $nfiles->{'_link'} = putinsrcrep($projid, $packid, "$srcrep/:upload/$$", '_link')
+    $nfiles->{'_link'} = bs_srcserver_bsdbonly::putinsrcrep($projid, $packid, "$srcrep/:upload/$$", '_link')
   }
   if ($ofilesdir eq "$srcrep/:upload/applylink$$") {
     BSUtil::cleandir("$srcrep/:upload/applylink$$");
@@ -655,7 +657,7 @@ sub findlastworkinglink {
   my @cand = grep {s/-MD5SUMS$//} ls("$srcrep/$packid");
   my %cand;
   for my $cand (@cand) {
-    my $files = lsrep($projid, $packid, $cand);
+    my $files = bs_srcserver_bsdbonly::lsrep($projid, $packid, $cand);
     next unless $files->{'/LOCAL'} && $files->{'/LOCAL'} eq $rev->{'srcmd5'};
     $cand{$cand} = $files->{'/LINK'};
   }
@@ -664,7 +666,7 @@ sub findlastworkinglink {
   return $cand[0] if @cand == 1;
 
   while (1) {
-    my $lfiles = lsrep($projid, $packid, $rev->{'srcmd5'});
+    my $lfiles = bs_srcserver_bsdbonly::lsrep($projid, $packid, $rev->{'srcmd5'});
     return undef unless $lfiles;
     my $l = readxml("$srcrep/$packid/$lfiles->{'_link'}-_link", $BSXML::link, 1);
     return undef unless $l;
@@ -673,8 +675,8 @@ sub findlastworkinglink {
     my $lastcand;
     for my $cand (splice @cand) {
       next unless $cand{$cand};
-      my $cfiles = lsrep($projid, $packid, $cand{$cand});
-      my $candrev = findlastrev($projid, $packid, $cfiles->{'/LOCAL'} ? $cfiles->{'/LOCAL'} : $cand{$cand});
+      my $cfiles = bs_srcserver_bsdbonly::lsrep($projid, $packid, $cand{$cand});
+      my $candrev = bs_srcserver_common::findlastrev($projid, $packid, $cfiles->{'/LOCAL'} ? $cfiles->{'/LOCAL'} : $cand{$cand});
       next unless $candrev;
       next if $lastcand && $lastcand->{'rev'} > $candrev->{'rev'};
       $cand{$cand} = $cfiles->{'/LINK'} ? $cfiles->{'/LINK'} : undef;
@@ -722,10 +724,10 @@ sub integratelink {
 	  if ($files->{$oppatch}) {
 	    $dontcopy{$oppatch} = 1;
 	    # argh, patch file already exists, rename...
-	    my $ppatch = findprojectpatchname($files);
+	    my $ppatch = bs_srcserver_common::findprojectpatchname($files);
 	    unlink("$srcrep/:upload/$$");
 	    link("$srcrep/$opackid/$ofiles->{$oppatch}-$oppatch", "$srcrep/:upload/$$") || die("link $srcrep/$opackid/$ofiles->{$oppatch}-$oppatch $srcrep/:upload/$$: $!\n");
-            $files->{$ppatch} = putinsrcrep($projid, $packid, "$srcrep/:upload/$$", $ppatch);
+            $files->{$ppatch} = bs_srcserver_bsdbonly::putinsrcrep($projid, $packid, "$srcrep/:upload/$$", $ppatch);
 	    push @{$nl->{'patches'}->{''}}, {'apply' => {'name' => $ppatch}};
 	    next;
 	  }
@@ -740,7 +742,7 @@ sub integratelink {
   }
   if ($lchanged) {
     writexml("$srcrep/:upload/$$", undef, $nl, $BSXML::link);
-    $files->{'_link'} = putinsrcrep($projid, $packid, "$srcrep/:upload/$$", '_link')
+    $files->{'_link'} = bs_srcserver_bsdbonly::putinsrcrep($projid, $packid, "$srcrep/:upload/$$", '_link')
   }
   for (sort keys %$ofiles) {
     next if $dontcopy{$_};

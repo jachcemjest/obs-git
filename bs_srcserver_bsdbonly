@@ -1,10 +1,12 @@
 #!/usr/bin/perl -w
 
+package bs_srcserver_bsdbonly;
+
 use strict;
 
-sub remote_getrev {
+sub remote_bs_srcserver_common_notsure::getrev {
   my ($projid, $packid, $rev) = @_;
-  my $proj = remoteprojid($projid);
+  my $proj = bs_srcserver_common::remoteprojid($projid);
   return undef unless $proj;
   my @args;
   push @args, "expand";
@@ -122,12 +124,12 @@ sub expandproduct {
 
   if (!$files) {
     # gone!
-    my @packages = grep {/^\Q${packid}:\E/} findpackages($projid);
+    my @packages = grep {/^\Q${packid}:\E/} bs_srcserver_common::findpackages($projid);
     for my $opid (@packages) {
       unlink("$projectsdir/$projid.pkg/$opid.upload-MD5SUMS");
       unlink("$projectsdir/$projid.pkg/$opid.rev");
       unlink("$projectsdir/$projid.pkg/$opid.xml");
-      notify_repservers('package', $projid, $opid);
+      bs_srcserver_common::notify_repservers('package', $projid, $opid);
     }
     return 1;
   }
@@ -190,20 +192,20 @@ sub expandproduct {
 	writexml("$projectsdir/$projid.pkg/.$pid.xml", "$projectsdir/$projid.pkg/$pid.xml", $pidpack, $BSXML::pack);
       }
       rmdir($pdir);
-      notify_repservers('package', $projid, $pid);
+      bs_srcserver_common::notify_repservers('package', $projid, $pid);
     }
     rmdir($odir);
   }
   BSUtil::cleandir($dir);
   rmdir($dir);
   # now do away with the old packages
-  my @packages = grep {/^\Q${packid}:\E/} findpackages($projid);
+  my @packages = grep {/^\Q${packid}:\E/} bs_srcserver_common::findpackages($projid);
   @packages = grep {!$pids{$_}} @packages;
   for my $opid (@packages) {
     unlink("$projectsdir/$projid.pkg/$opid.upload-MD5SUMS");
     unlink("$projectsdir/$projid.pkg/$opid.rev");
     unlink("$projectsdir/$projid.pkg/$opid.xml");
-    notify_repservers('package', $projid, $opid);
+    bs_srcserver_common::notify_repservers('package', $projid, $opid);
   }
   return 1;
 }
@@ -213,7 +215,7 @@ sub addrev {
   die("project '$projid' does not exist\n") unless -e "$projectsdir/$projid.xml";
   if ($packid eq '_pattern') {
     my $srcmd5 = addmeta($projid, $packid, $files, 'pattern');
-    notify_repservers('project', $projid);
+    bs_srcserver_common::notify_repservers('project', $projid);
 
     return {'rev' => 'pattern', 'srcmd5' => $srcmd5};
   }
@@ -246,7 +248,7 @@ sub addrev {
   my $release;
   my $bconf = Build::read_config('noarch');
   for my $type ('spec', 'dsc', 'kiwi') {
-    my $file = findfile($projid, $packid, undef, $type, $files);
+    my $file = bs_srcserver_common_notsure::findfile($projid, $packid, undef, $type, $files);
     next unless defined $file;
     my $d = Build::parse($bconf, "$srcrep/$packid/$files->{$file}-$file");
     next unless defined $d->{'version'};
@@ -280,7 +282,7 @@ sub addrev {
   # kill upload revision as we did a real commit
   unlink("$projectsdir/$projid.pkg/$packid.upload-MD5SUMS");
 
-  notify_repservers('package', $projid, $packid);
+  bs_srcserver_common::notify_repservers('package', $projid, $packid);
   return $rev;
 }
 
@@ -288,7 +290,7 @@ sub getfilelist {
   my ($cgi, $projid, $packid) = @_;
 
   my $view = $cgi->{'view'};
-  my $rev = getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
+  my $rev = bs_srcserver_common_notsure::getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
   die("nothing known\n") unless $rev;
   my $ret = {};
   my $li = {};
@@ -303,7 +305,7 @@ sub getfilelist {
       $rev = addrev($projid, $packid, $files, undef, undef, '');
     }
     my %lrev = (%$rev, 'name' => $packid);
-    my $lfiles = handlelinks($projid, \%lrev, $files, $rev, $cgi->{'linkrev'});
+    my $lfiles = bs_srcserver_bsdbonly_links::handlelinks($projid, \%lrev, $files, $rev, $cgi->{'linkrev'});
     delete $lrev{'rev'};
     if ($cgi->{'expand'}) {
       die("$lfiles\n") if !ref $lfiles;
@@ -317,7 +319,7 @@ sub getfilelist {
       $li->{'xsrcmd5'} = $lrev{'srcmd5'} if $lrev{'srcmd5'};
       $li->{'error'} = $lfiles unless ref $lfiles;
       if ($cgi->{'lastworking'}) {
-        my $lastworking = findlastworkinglink($projid, $packid, $rev);
+        my $lastworking = bs_srcserver_bsdbonly_links::findlastworkinglink($projid, $packid, $rev);
         $li->{'lastworking'} = $lastworking if $lastworking;
       }
     }
@@ -384,7 +386,7 @@ sub getfilelist {
   return ($ret, $BSXML::dir);
 }
 
-sub sourcecommitfilelist {
+sub bs_srcserver_common_notsure::sourcecommitfilelist {
   my ($cgi, $projid, $packid) = @_;
   mkdir_p("$srcrep/:upload");
   my $uploaded = BSServer::read_file("$srcrep/:upload/$$");
@@ -409,7 +411,7 @@ sub sourcecommitfilelist {
     return ($res, $BSXML::dir);
   }
 
-  $files = keeplink($cgi, $projid, $packid, $files) if $cgi->{'keeplink'};
+  $files = bs_srcserver_bsdbonly_links::keeplink($cgi, $projid, $packid, $files) if $cgi->{'bs_srcserver_bsdbonly_links::keeplink'};
   my $user = defined($cgi->{'user'}) ? $cgi->{'user'} : 'unknown';
   my $comment = defined($cgi->{'comment'}) ? $cgi->{'comment'} : '';
   if (-e "$projectsdir/$projid.pkg/$packid.upload-MD5SUMS") {
@@ -429,7 +431,7 @@ sub sourcecopy {
   my $oprojid = exists($cgi->{'oproject'}) ? $cgi->{'oproject'} : $projid;
   my $opackid = exists($cgi->{'opackage'}) ? $cgi->{'opackage'} : $packid;
   my $orev = $cgi->{'orev'};
-  $orev = getrev($oprojid, $opackid, defined($orev) ? $orev : 'latest');
+  $orev = bs_srcserver_common_notsure::getrev($oprojid, $opackid, defined($orev) ? $orev : 'latest');
   my $files = lsrep($oprojid, $opackid, $orev->{'srcmd5'});
   die("need a revision to copy\n") if !$cgi->{'rev'} && !$cgi->{'orev'} && $oprojid eq $projid && $opackid eq $packid && !($files->{'_link'} && $cgi->{'expand'});
 
@@ -447,10 +449,10 @@ sub sourcecopy {
       if ($lprojid eq $projid && $lpackid eq $packid) {
         # copy destination is target of link
 	# we're integrating this link
-        $lrev = getrev($lprojid, $lpackid, $lrev);
+        $lrev = bs_srcserver_common_notsure::getrev($lprojid, $lpackid, $lrev);
 	my $lfiles = lsrep($lprojid, $lpackid, $lrev->{'srcmd5'});
 	if ($lfiles->{'_link'} && !$cgi->{'expand'}) {
-	  $files = integratelink($lfiles, $lprojid, $lpackid, $files, $oprojid, $opackid, $l);
+	  $files = bs_srcserver_bsdbonly_links::integratelink($lfiles, $lprojid, $lpackid, $files, $oprojid, $opackid, $l);
 	} else {
 	  # auto expand
 	  $cgi->{'expand'} = 1;
@@ -462,7 +464,7 @@ sub sourcecopy {
 
   if ($files->{'_link'} && $cgi->{'expand'}) {
     my %olrev = (%$orev, 'name' => $opackid);
-    $files = handlelinks($oprojid, \%olrev, $files, $orev);
+    $files = bs_srcserver_bsdbonly_links::handlelinks($oprojid, \%olrev, $files, $orev);
     die("bad link: $files\n") unless ref $files;
   }
 
@@ -480,14 +482,14 @@ sub sourcecopy {
       }
     }
   }
-  $files = keeplink($cgi, $projid, $packid, $files) if $cgi->{'keeplink'};
+  $files = bs_srcserver_bsdbonly_links::keeplink($cgi, $projid, $packid, $files) if $cgi->{'bs_srcserver_bsdbonly_links::keeplink'};
   my $user = defined($cgi->{'user'}) ? $cgi->{'user'} : 'unknown';
   my $comment = defined($cgi->{'comment'}) ? $cgi->{'comment'} : '';
   my $rev = addrev($projid, $packid, $files, $user, $comment, $cgi->{'rev'});
 
   if ($autosimplifylink && !$autosimplifylink->{'rev'}) {
     eval {
-      my $latestorev = getrev($oprojid, $opackid);
+      my $latestorev = bs_srcserver_common_notsure::getrev($oprojid, $opackid);
       if ($latestorev->{'srcmd5'} eq $orev->{'srcmd5'}) {
         # simplify link
         my $nl = {};
@@ -511,7 +513,7 @@ sub getfile {
   my ($cgi, $projid, $packid, $filename) = @_;
   die("no filename\n") unless defined($filename) && $filename ne '';
   die("bad filename\n") if $filename =~ /\// || $filename =~ /^\./;
-  my $rev = getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
+  my $rev = bs_srcserver_common_notsure::getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
   die("$filename: no such project/package\n") unless $rev;
   my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
   die("$filename: no such file\n") unless $files->{$filename};
@@ -525,7 +527,7 @@ sub putfile {
   my ($cgi, $projid, $packid, $filename) = @_;
   die("no filename\n") unless defined($filename) && $filename ne '';
   die("bad filename\n") if $filename =~ /\// || $filename =~ /^\./;
-  my $rev = getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
+  my $rev = bs_srcserver_common_notsure::getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
   die("unknown project/package\n") unless $rev;
   mkdir_p("$srcrep/:upload");
   my $uploaded = BSServer::read_file("$srcrep/:upload/$$", 'withmd5' => 1);
@@ -541,7 +543,7 @@ sub putfile {
   # create new meta file
   my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
   $files->{$filename} = $uploaded->{'md5'};
-  $files = keeplink($cgi, $projid, $packid, $files) if $cgi->{'keeplink'};
+  $files = bs_srcserver_bsdbonly_links::keeplink($cgi, $projid, $packid, $files) if $cgi->{'bs_srcserver_bsdbonly_links::keeplink'};
   my $user = defined($cgi->{'user'}) ? $cgi->{'user'} : 'unknown';
   my $comment = defined($cgi->{'comment'}) ? $cgi->{'comment'} : '';
   $rev = addrev($projid, $packid, $files, $user, $comment, $cgi->{'rev'});
@@ -552,12 +554,12 @@ sub delfile {
   my ($cgi, $projid, $packid, $filename) = @_;
   die("no filename\n") unless defined($filename) && $filename ne '';
   die("bad filename\n") if $filename =~ /\// || $filename =~ /^\./;
-  my $rev = getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
+  my $rev = bs_srcserver_common_notsure::getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
   die("unknown project/package\n") unless $rev;
   my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
   die("file '$filename' does not exist\n") unless $files->{$filename};
   delete $files->{$filename};
-  $files = keeplink($projid, $packid, $files) if $cgi->{'keeplink'};
+  $files = bs_srcserver_bsdbonly_links::keeplink($projid, $packid, $files) if $cgi->{'bs_srcserver_bsdbonly_links::keeplink'};
   my $user = defined($cgi->{'user'}) ? $cgi->{'user'} : 'unknown';
   my $comment = defined($cgi->{'comment'}) ? $cgi->{'comment'} : '';
   $rev = addrev($projid, $packid, $files, $user, $comment, $cgi->{'rev'});
@@ -573,7 +575,7 @@ sub delfile {
 sub getprojpack {
   my ($cgi, $projids, $repoids, $packids, $arch) = @_;
   $arch ||= 'noarch';
-  $projids = [ findprojects() ] unless $projids;
+  $projids = [ bs_srcserver_common::findprojects() ] unless $projids;
   if ($BSConfig::limit_projects && $BSConfig::limit_projects->{$arch}) {
     $projids ||= $BSConfig::limit_projects->{$arch};
     my %limit_projids = map {$_ => 1} @{$BSConfig::limit_projects->{$arch}};
@@ -589,9 +591,9 @@ sub getprojpack {
   for my $projid (@$projids) {
     my $jinfo = { 'name' => $projid };
     if ($withremotemap && !exists($remotemap{$projid})) {
-      $remotemap{$projid} = remoteprojid($projid);
+      $remotemap{$projid} = bs_srcserver_common::remoteprojid($projid);
     }
-    my $proj = readproj($projid, 1);
+    my $proj = bs_srcserver_common::readproj($projid, 1);
     next unless $proj;
     if ($cgi->{'withconfig'}) {
       my $config = readstr("$projectsdir/$projid.conf", 1);
@@ -615,7 +617,7 @@ sub getprojpack {
       $jinfo->{'patternmd5'} = Digest::MD5::md5_hex($patterns) if $patterns;
     }
     my @packages;
-    @packages = findpackages($projid) unless $cgi->{'nopackages'};
+    @packages = bs_srcserver_common::findpackages($projid) unless $cgi->{'nopackages'};
     next if $repoids && !grep {$repoids->{$_->{'name'}}} @{$proj->{'repository'} || []};
     next if $packids && !grep {$packids->{$_}} @packages;
     for (qw{title description build publish debuginfo useforbuild remoteurl remoteproject download}) {
@@ -645,7 +647,7 @@ sub getprojpack {
     # Check package number quota
     my $quota_exceeded;
     if ($BSConfig::bsquotafile) {
-      my $pquota = getprojquotapackage($projid);
+      my $pquota = bs_srcserver_common::getprojquotapackage($projid);
       $quota_exceeded = 1 if defined($pquota) && @packages > $pquota;
     }
 
@@ -657,11 +659,11 @@ sub getprojpack {
       }
       if ($cgi->{'expandedrepos'}) {
 	for my $repo (@{$jinfo->{'repository'}}) {
-	  my @prps = expandsearchpath($projid, $repo->{'name'});
+	  my @prps = expandbs_srcserver_common::searchpath($projid, $repo->{'name'});
 	  for my $prp (@prps) {
 	    my @s = split('/', $prp, 2);
 	    if ($withremotemap && !exists($remotemap{$s[0]})) {
-	      $remotemap{$s[0]} = remoteprojid($s[0]);
+	      $remotemap{$s[0]} = bs_srcserver_common::remoteprojid($s[0]);
 	    }
 	    $prp = {'project' => $s[0], 'repository' => $s[1]};
 	  }
@@ -682,7 +684,7 @@ sub getprojpack {
       next if $packids && !$packids->{$packid};
       my $pinfo = {'name' => $packid};
       push @pinfo, $pinfo;
-      my $pack = readpack($projid, $packid, 1);
+      my $pack = bs_srcserver_common::readpack($projid, $packid, 1);
       if (!$pack) {
 	$pinfo->{'error'} = 'no metadata';
 	next;
@@ -720,7 +722,7 @@ sub getprojpack {
 	next;
       }
       if ($cgi->{'withsrcmd5'} || $cgi->{'withdeps'}) {
-        my $rev = getrev($projid, $packid, 'build');
+        my $rev = bs_srcserver_common_notsure::getrev($projid, $packid, 'build');
 	if (!$rev || $rev->{'srcmd5'} eq 'empty' || $rev->{'srcmd5'} eq 'd41d8cd98f00b204e9800998ecf8427e') {
 	  $pinfo->{'error'} = 'no source uploaded';
 	  next;
@@ -728,7 +730,7 @@ sub getprojpack {
 	$pinfo->{'srcmd5'} = $rev->{'srcmd5'};
 	$pinfo->{'rev'} = $rev->{'rev'};
 	my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
-	$files = handlelinks($projid, $pinfo, $files, $rev) if ref($files) && $files->{'_link'};
+	$files = bs_srcserver_bsdbonly_links::handlelinks($projid, $pinfo, $files, $rev) if ref($files) && $files->{'_link'};
 	if (!ref $files) {
 	  $pinfo->{'error'} = defined($files) ? $files : "could not get file list";
 	  next;
@@ -781,7 +783,7 @@ sub getprojpack {
 	      print "reading config for $projid/$repoid $arch\n";
 	      my $c;
 	      eval {
-	        ($c) = getconfig($cgi, $projid, $repoid);
+	        ($c) = bs_srcserver_common::getconfig($cgi, $projid, $repoid);
 	      };
 	      if ($@) {
 	        my $err = $@;
@@ -798,7 +800,7 @@ sub getprojpack {
 	      $rinfo->{'error'} = 'bad build configuration';
 	      next;
 	    }
-            my ($md5, $file) = findfile($projid, $packid, $repoid, $type, $files);
+            my ($md5, $file) = bs_srcserver_common_notsure::findfile($projid, $packid, $repoid, $type, $files);
 	    if (!$md5) {
 	      # no spec/dsc/kiwi file found
 	      if (grep {/\.(?:spec|dsc|kiwi)$/} keys %$files) {
@@ -872,16 +874,16 @@ sub getsources {
 ###!!! obs-git: direct usage of local repo is marginal - just something with link errors, but also uses some RPC that maybe modify local repo
 sub getlogfile {
   my ($cgi, $projid, $repoid, $arch, $packid) = @_;
-  checkprojrepoarch($projid, $repoid, $arch);
+  bs_srcserver_common::checkprojrepoarch($projid, $repoid, $arch);
 
   if (!$cgi->{'start'}) {
     # check if the package is broken
-    my $rev = getrev($projid, $packid, 'build');
+    my $rev = bs_srcserver_common_notsure::getrev($projid, $packid, 'build');
     if ($rev) {
       my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
       if (ref($files) && $files->{'_link'}) {
 	my %lrev = (%$rev, 'name' => $packid);
-        $files = handlelinks($projid, \%lrev, $files, $rev);
+        $files = bs_srcserver_bsdbonly_links::handlelinks($projid, \%lrev, $files, $rev);
 	if (!ref $files) {
 	  my $error = "$files\n";
 	  if ($lrev{'srcmd5'}) {
@@ -968,8 +970,8 @@ sub createrequest {
   $req->{'state'}->{'who'} = $cgi->{'user'} if defined $cgi->{'user'};
   my @lt = localtime(time());
   $req->{'state'}->{'when'} = sprintf("%04d-%02d-%02dT%02d:%02d:%02d", $lt[5] + 1900, $lt[4] + 1, @lt[3,2,1,0]);
-  $req->{'id'} = nextreqid();
-  writereq(undef, $req);
+  $req->{'id'} = bs_srcserver_common::nextreqid();
+  bs_srcserver_common::writereq(undef, $req);
   BSHermes::notify("SRCSRV_REQUEST_CREATE", BSHermes::requestParams($req, $cgi->{'user'}));
   return ($req, $BSXML::request);
 }

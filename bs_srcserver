@@ -80,11 +80,11 @@ my %packagequota;
 
 ##########################
 #just as it should look like for using original backend
-import(bs_srcserver_common)
-import(bs_srcserver_common_notsure)
-import(bs_srcserver_uploadonly)
-import(bs_srcserver_bsdbonly_links)
-import(bs_srcserver_bsdbonly)
+use bs_srcserver_common;
+use bs_srcserver_common_notsure;
+use bs_srcserver_uploadonly;
+use bs_srcserver_bsdbonly_links;
+use bs_srcserver_bsdbonly;
 ##########################
 
 ###!!! obs-git: not used anywhere else
@@ -101,11 +101,11 @@ sub kiwibootcallback {
   my ($projid, $packid) = @_;
   BSVerify::verify_projid($projid);
   BSVerify::verify_packid($packid);
-  my $rev = getrev($projid, $packid);
+  my $rev = bs_srcserver_common_notsure::getrev($projid, $packid);
   die("$projid/$packid does not exist\n") unless $rev && $rev->{'srcmd5'} ne 'empty';
-  my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
+  my $files = bs_srcserver_bsdbonly::lsrep($projid, $packid, $rev->{'srcmd5'});
   die("could not get file list\n") unless $files;
-  my ($md5, $file) = findfile($projid, $packid, undef, 'kiwi', $files);
+  my ($md5, $file) = bs_srcserver_common_notsure::findfile($projid, $packid, undef, 'kiwi', $files);
   die("no kiwi file found\n") unless $md5 && $file;
   my $xml = readstr("$srcrep/$packid/$md5-$file");
   return ($xml, {'project' => $projid, 'package' => $packid, 'srcmd5' => $rev->{'srcmd5'}, 'file' => $file});
@@ -125,7 +125,7 @@ sub prp_to_repoinfo {
     my $repoinfodb = BSDB::opendb($extrepodb, 'repoinfo');
     $repoinfo = $repoinfodb->fetch($prp);
     if ($repoinfo) {
-      for (@{$repoinfo->{'prpsearchpath'} || []}) {
+      for (@{$repoinfo->{'prpbs_srcserver_common::searchpath'} || []}) {
 	next if ref($_);	# legacy
 	my ($p, $r) = split('/', $_, 2);
 	$_ = {'project' => $p, 'repository' => $r};
@@ -156,131 +156,131 @@ my $dispatches = [
   '!- HEAD:' => undef,
 
   # /platform name space -> obsolete
-  '/platform' => \&getprojectlist,
-  '/platform/$project' => \&getrepositorylist,
+  '/platform' => \&bs_srcserver_common::bs_srcserver_common::getprojectlist,
+  '/platform/$project' => \&bs_srcserver_common::getrepositorylist,
   '/platform/$project/$repository' => \&getrepository, #common
 
   # /repository name space -> obsolete
-  '/repository' => \&getprojectlist,
-  '/repository/$project' => \&getrepositorylist,
+  '/repository' => \&bs_srcserver_common::bs_srcserver_common::getprojectlist,
+  '/repository/$project' => \&bs_srcserver_common::getrepositorylist,
   '/repository/$project/$repository' => \&getrepository,
 
   # /project name space -> obsolete
-  '/project' => \&getprojectlist,
-  '/project/$project' => \&getproject,
-  'PUT:/project/$project' => \&putproject,
+  '/project' => \&bs_srcserver_common::bs_srcserver_common::getprojectlist,
+  '/project/$project' => \&bs_srcserver_common::getproject,
+  'PUT:/project/$project' => \&bs_srcserver_uploadonly::putproject,
 
   # /package name space -> obsolete
-  '/package' => \&getprojectlist,
-  '/package/$project' => \&getpackagelist,
-  '/package/$project/$package' => \&getpackage,
-  'PUT:/package/$project/$package' => \&putpackage,
-  'DELETE:/package/$project/$package' => \&delpackage,
-  '/package/$project/$package/history rev?' => \&getpackagehistory,
+  '/package' => \&bs_srcserver_common::bs_srcserver_common::getprojectlist,
+  '/package/$project' => \&bs_srcserver_common::bs_srcserver_common::getpackagelist,
+  '/package/$project/$package' => \&bs_srcserver_common::getpackage,
+  'PUT:/package/$project/$package' => \&bs_srcserver_uploadonly::putpackage,
+  'DELETE:/package/$project/$package' => \&bs_srcserver_common::delpackage,
+  '/package/$project/$package/history rev?' => \&bs_srcserver_common::bs_srcserver_common::getpackagehistory,
 
   # /source name space: manage project and package data
-  '/source' => \&getprojectlist, #common
-  'POST:/source/$project cmd:' => \&projectcmd, #common and upload only
-  '/source/$project' => \&getpackagelist, #common
-  'DELETE:/source/$project' => \&delproject, #common - does not touch any sources
-  '/source/$project/_meta' => \&getproject, #common
-  'PUT:/source/$project/_meta' => \&putproject, #upload only
-  '/source/$project/_pubkey' => \&getpubkey, #common
-  'DELETE:/source/$project/_pubkey' => \&deletekey, #common
-  '/source/$project/_config' => \&getprojectconfig, #common
-  'PUT:/source/$project/_config' => \&putprojectconfig, #upload only
+  '/source' => \&bs_srcserver_common::bs_srcserver_common::getprojectlist, #common
+  'POST:/source/$project cmd:' => \&bs_srcserver_common::projectcmd, #common and upload only
+  '/source/$project' => \&bs_srcserver_common::bs_srcserver_common::getpackagelist, #common
+  'DELETE:/source/$project' => \&bs_srcserver_common::delproject, #common - does not touch any sources
+  '/source/$project/_meta' => \&bs_srcserver_common::getproject, #common
+  'PUT:/source/$project/_meta' => \&bs_srcserver_uploadonly::putproject, #upload only
+  '/source/$project/_pubkey' => \&bs_srcserver_common::getpubkey, #common
+  'DELETE:/source/$project/_pubkey' => \&bs_srcserver_common::deletekey, #common
+  '/source/$project/_config' => \&bs_srcserver_common::bs_srcserver_common::getprojectconfig, #common
+  'PUT:/source/$project/_config' => \&bs_srcserver_uploadonly::bs_srcserver_uploadonly::putprojectconfig, #upload only
 
-  'POST:/source/$project/$package cmd: rev? user:? comment:? orev:rev? oproject:project? opackage:package? expand:bool? keeplink:bool? repairlink:bool? linkrev? unified:bool?' => \&sourcecmd, #common main function, but subfunctions are bsdb dependant
-  'PUT:/source/$project/$package cmd: rev? user:? comment:?' => \&sourcecommitfilelist, #bsdb only
-  '/source/$project/$package:package_product rev? linkrev? emptylink:bool? expand:bool? view:? extension:? lastworking:bool?' => \&getfilelist, #bsdb only
-  '/source/$project/$package:package_product/_history rev?' => \&getpackagehistory, #common
-  '/source/$project/$package/_meta' => \&getpackage, #common
-  'PUT:/source/$project/$package/_meta' => \&putpackage, #upload only
-  'DELETE:/source/$project/$package' => \&delpackage, #common, but uses expandproduct function (bsdb only)
-  '/source/$project/$package:package_pattern/$filename rev?' => \&getfile, #bsdb only, but probably only path variable need change in git
-  'PUT:/source/$project/$package:package_pattern/$filename rev? user:? comment:? keeplink:bool?' => \&putfile, #bsdb only
-  'DELETE:/source/$project/$package:package_pattern/$filename rev? user:? comment:? keeplink:bool?' => \&delfile, #bsdb only
-  '/source/$project/$package:package_product/$filename rev?' => \&getfile, #before
-  'PUT:/source/$project/$package:package_product/$filename rev? user:? comment:? keeplink:bool?' => \&putfile, #before
-  'DELETE:/source/$project/$package:package_product/$filename rev? user:? comment:? keeplink:bool?' => \&delfile, #before
+  'POST:/source/$project/$package cmd: rev? user:? comment:? orev:rev? oproject:project? opackage:package? expand:bool? bs_srcserver_bsdbonly_links::keeplink:bool? repairlink:bool? linkrev? unified:bool?' => \&bs_srcserver_common::sourcecmd, #common main function, but subfunctions are bsdb dependant
+  'PUT:/source/$project/$package cmd: rev? user:? comment:?' => \&bs_srcserver_bsdbonly::bs_srcserver_common_notsure::sourcecommitfilelist, #bsdb only
+  '/source/$project/$package:package_product rev? linkrev? emptylink:bool? expand:bool? view:? extension:? lastworking:bool?' => \&bs_srcserver_bsdbonly::bs_srcserver_bsdbonly::getfilelist, #bsdb only
+  '/source/$project/$package:package_product/_history rev?' => \&bs_srcserver_common::bs_srcserver_common::getpackagehistory, #common
+  '/source/$project/$package/_meta' => \&bs_srcserver_common::getpackage, #common
+  'PUT:/source/$project/$package/_meta' => \&bs_srcserver_uploadonly::putpackage, #upload only
+  'DELETE:/source/$project/$package' => \&bs_srcserver_common::delpackage, #common, but uses bs_srcserver_bsdbonly::expandproduct function (bsdb only)
+  '/source/$project/$package:package_pattern/$filename rev?' => \&bs_srcserver_bsdbonly::getfile, #bsdb only, but probably only path variable need change in git
+  'PUT:/source/$project/$package:package_pattern/$filename rev? user:? comment:? bs_srcserver_bsdbonly_links::keeplink:bool?' => \&bs_srcserver_bsdbonly::putfile, #bsdb only
+  'DELETE:/source/$project/$package:package_pattern/$filename rev? user:? comment:? bs_srcserver_bsdbonly_links::keeplink:bool?' => \&bs_srcserver_bsdbonly::delfile, #bsdb only
+  '/source/$project/$package:package_product/$filename rev?' => \&bs_srcserver_bsdbonly::getfile, #before
+  'PUT:/source/$project/$package:package_product/$filename rev? user:? comment:? bs_srcserver_bsdbonly_links::keeplink:bool?' => \&bs_srcserver_bsdbonly::putfile, #before
+  'DELETE:/source/$project/$package:package_product/$filename rev? user:? comment:? bs_srcserver_bsdbonly_links::keeplink:bool?' => \&bs_srcserver_bsdbonly::delfile, #before
 
-  # /published name spec: access published binaries
-  '/published' => \&published, #common
-  '/published/$project' => \&published,
-  '/published/$project/$repository' => \&published,
-  '/published/$project/$repository/$arch:filename view:?' => \&published,
-  '/published/$project/$repository/$arch:filename/$filename view:?' => \&published,
+  # /bs_srcserver_common::published name spec: access bs_srcserver_common::published binaries
+  '/bs_srcserver_common::published' => \&bs_srcserver_common::published, #common
+  '/bs_srcserver_common::published/$project' => \&bs_srcserver_common::published,
+  '/bs_srcserver_common::published/$project/$repository' => \&bs_srcserver_common::published,
+  '/bs_srcserver_common::published/$project/$repository/$arch:filename view:?' => \&bs_srcserver_common::published,
+  '/bs_srcserver_common::published/$project/$repository/$arch:filename/$filename view:?' => \&bs_srcserver_common::published,
 
   # scheduler calls
-  '/getprojpack $project* $repository* $package* $arch? withrepos:bool? withsrcmd5:bool? withdeps:bool? withconfig:bool? expandedrepos:bool? ignoredisable:bool? nopackages:bool? withremotemap:bool?' => \&getprojpack, #bsdb only, but looks like marginal usage only
-  'POST:/relsync $project $repository $arch' => \&postrelsync, #common, but not sure if RPC doesn't access local repo
-  '/relsync $project $repository $arch' => \&getrelsync, #common, but not sure if RPC doesn't access local repo
+  '/bs_srcserver_bsdbonly::getprojpack $project* $repository* $package* $arch? withrepos:bool? withsrcmd5:bool? withdeps:bool? withconfig:bool? expandedrepos:bool? ignoredisable:bool? nopackages:bool? withremotemap:bool?' => \&bs_srcserver_bsdbonly::getprojpack, #bsdb only, but looks like marginal usage only
+  'POST:/relsync $project $repository $arch' => \&bs_srcserver_common_notsure::postrelsync, #common, but not sure if RPC doesn't access local repo
+  '/relsync $project $repository $arch' => \&bs_srcserver_common_notsure::getrelsync, #common, but not sure if RPC doesn't access local repo
 
   # worker calls
-  '/getsources $project $package $srcmd5:md5' => \&getsources, #bsdb only
-  '/getconfig $project $repository path:prp*' => \&getconfig, #common, but some subroutine are unsure
+  '/bs_srcserver_bsdbonly::getsources $project $package $srcmd5:md5' => \&bs_srcserver_bsdbonly::getsources, #bsdb only
+  '/bs_srcserver_common::getconfig $project $repository path:prp*' => \&bs_srcserver_common::getconfig, #common, but some subroutine are unsure
 
-  '/getsignkey $project withpubkey:bool?' => \&getsignkey, #common
-  '/getbinaries $project $repository $arch binaries: nometa:bool?' => \&worker_getbinaries, #common
-  '/lastevents $filter:* start:num?' => \&worker_lastevents, #common
-  '/event type: project: package:? repository:? arch:? job:?' => \&newevent, #common
+  '/bs_srcserver_common::getsignkey $project withpubkey:bool?' => \&bs_srcserver_common::getsignkey, #common
+  '/getbinaries $project $repository $arch binaries: nometa:bool?' => \&bs_srcserver_common::worker_getbinaries, #common
+  '/lastevents $filter:* start:num?' => \&bs_srcserver_common::worker_lastevents, #common
+  '/event type: project: package:? repository:? arch:? job:?' => \&bs_srcserver_common::newevent, #common
   # tmp until lightty gets fixed
-  '/public/lastevents $filter:* start:num?' => \&worker_lastevents, #before
+  '/public/lastevents $filter:* start:num?' => \&bs_srcserver_common::worker_lastevents, #before
 
-  # search interface
-  '/search $in: $match: return:? values:bool?' => \&search, #common
-  '/search/project $match:' => \&search_proj, #common
-  '/search/project/id $match:' => \&search_proj_id, #common
-  '/search/package $match:' => \&search_pack, #common
-  '/search/package/id $match:' => \&search_pack_id, #common
+  # bs_srcserver_common::search interface
+  '/bs_srcserver_common::search $in: $match: return:? values:bool?' => \&bs_srcserver_common::search, #common
+  '/bs_srcserver_common::search/project $match:' => \&bs_srcserver_common::bs_srcserver_common::search_proj, #common
+  '/bs_srcserver_common::search/project/id $match:' => \&bs_srcserver_common::bs_srcserver_common::bs_srcserver_common::search_proj_id, #common
+  '/bs_srcserver_common::search/package $match:' => \&bs_srcserver_common::bs_srcserver_common::search_pack, #common
+  '/bs_srcserver_common::search/package/id $match:' => \&bs_srcserver_common::bs_srcserver_common::bs_srcserver_common::search_pack_id, #common
 
-  'POST:/search/published cmd:' => \&search_published_updatedb, #common, but i'm not sure about BSDB:: calls
-  '/search/published/binary/id $match:' => \&search_published_binary_id, #common, but i'm not sure about BSDB:: calls and some DB-stored paths
-  '/search/published/pattern/id $match:' => \&search_published_pattern_id, #common, but i'm not sure about BSDB:: calls and some DB-stored paths
+  'POST:/bs_srcserver_common::search/bs_srcserver_common::published cmd:' => \&bs_srcserver_common::search_bs_srcserver_common::published_updatedb, #common, but i'm not sure about BSDB:: calls
+  '/bs_srcserver_common::search/bs_srcserver_common::published/binary/id $match:' => \&bs_srcserver_common::search_bs_srcserver_common::published_binary_id, #common, but i'm not sure about BSDB:: calls and some DB-stored paths
+  '/bs_srcserver_common::search/bs_srcserver_common::published/pattern/id $match:' => \&bs_srcserver_common::search_bs_srcserver_common::published_pattern_id, #common, but i'm not sure about BSDB:: calls and some DB-stored paths
 
   # build calls for binary files
-  '/build' => \&getprojectlist, #common, before
-  '/build/_workerstatus scheduleronly:bool? arch*' => \&getworkerstatus, #common
-  'POST:/build/$project cmd: repository* arch* package* code:*' => \&docommand, #common
-  '/build/$project' => \&getrepositorylist, #common
-  '/build/$project/_result oldstate:md5? view:resultview* lastbuild:bool? repository* arch* package* code:*' => \&getresult, #common, but not sure if RPC doesn't access local repo
-  '/build/$project/$repository' => \&getarchlist,
-  '/build/$project/$repository/_buildconfig path:prp*' => \&getconfig, #common
-  '/build/$project/$repository/$arch' => \&getpackagelist, #common, before
-  '/build/$project/$repository/$arch/_builddepinfo package*' => \&getbuilddepinfo, #common, but not sure if RPC doesn't access local repo
-  '/build/$project/$repository/$arch/_jobhistory package* code:*' => \&getjobhistory, #common, but not sure if RPC doesn't access local repo
-  'POST:/build/$project/$repository/$arch/_repository match:' =>  \&postrepo, #common, but not sure if RPC doesn't access local repo
-  '/build/$project/$repository/$arch/$package_repository view:? binary:filename*' => \&getbinarylist, #common, but not sure if RPC doesn't access local repo
-  'POST:/build/$project/$repository/$arch/$package_repository/_buildinfo add:*' => \&getbuildinfo_post, #common, but not sure if RPC doesn't access local repo
-  '/build/$project/$repository/$arch/$package/_buildinfo add:* internal:bool?' => \&getbuildinfo, #common, but not sure if RPC doesn't access local repo
-  '/build/$project/$repository/$arch/$package/_log nostream:bool? start:num? end:num?' => \&getlogfile, #bsdb only, but maybe only marginaly
-  '/build/$project/$repository/$arch/$package/_reason' => \&getbuildreason, #common, but not sure if RPC doesn't access local repo
-  '/build/$project/$repository/$arch/$package/_status' => \&getbuildstatus, #common, but not sure if RPC doesn't access local repo
-  '/build/$project/$repository/$arch/$package/_history' => \&getbuildhistory, #common, but not sure if RPC doesn't access local repo
-  '/build/$project/$repository/$arch/$package_repository/$filename' => \&getbinary, #common, but not sure if RPC doesn't access local repo
-  'PUT:/build/$project/$repository/$arch/_repository/$filename ignoreolder:bool? wipe:bool?' => \&putbinary, #common, but not sure if RPC doesn't access local repo
+  '/build' => \&bs_srcserver_common::bs_srcserver_common::getprojectlist, #common, before
+  '/build/_workerstatus scheduleronly:bool? arch*' => \&bs_srcserver_common::getworkerstatus, #common
+  'POST:/build/$project cmd: repository* arch* package* code:*' => \&bs_srcserver_common::docommand, #common
+  '/build/$project' => \&bs_srcserver_common::getrepositorylist, #common
+  '/build/$project/_result oldstate:md5? view:resultview* lastbuild:bool? repository* arch* package* code:*' => \&bs_srcserver_common_notsure::getresult, #common, but not sure if RPC doesn't access local repo
+  '/build/$project/$repository' => \&bs_srcserver_common::getarchlist,
+  '/build/$project/$repository/_buildconfig path:prp*' => \&bs_srcserver_common::getconfig, #common
+  '/build/$project/$repository/$arch' => \&bs_srcserver_common::bs_srcserver_common::getpackagelist, #common, before
+  '/build/$project/$repository/$arch/_builddepinfo package*' => \&bs_srcserver_common_notsure::getbuilddepinfo, #common, but not sure if RPC doesn't access local repo
+  '/build/$project/$repository/$arch/_jobhistory package* code:*' => \&bs_srcserver_common_notsure::getjobhistory, #common, but not sure if RPC doesn't access local repo
+  'POST:/build/$project/$repository/$arch/_repository match:' =>  \&bs_srcserver_common_notsure::postrepo, #common, but not sure if RPC doesn't access local repo
+  '/build/$project/$repository/$arch/$package_repository view:? binary:filename*' => \&bs_srcserver_common_notsure::bs_srcserver_common_notsure::getbinarylist, #common, but not sure if RPC doesn't access local repo
+  'POST:/build/$project/$repository/$arch/$package_repository/_buildinfo add:*' => \&bs_srcserver_common_notsure::bs_srcserver_common_notsure::getbuildinfo_post, #common, but not sure if RPC doesn't access local repo
+  '/build/$project/$repository/$arch/$package/_buildinfo add:* internal:bool?' => \&bs_srcserver_common_notsure::getbuildinfo, #common, but not sure if RPC doesn't access local repo
+  '/build/$project/$repository/$arch/$package/_log nostream:bool? start:num? end:num?' => \&bs_srcserver_bsdbonly::getlogfile, #bsdb only, but maybe only marginaly
+  '/build/$project/$repository/$arch/$package/_reason' => \&bs_srcserver_common_notsure::getbuildreason, #common, but not sure if RPC doesn't access local repo
+  '/build/$project/$repository/$arch/$package/_status' => \&bs_srcserver_common_notsure::getbuildstatus, #common, but not sure if RPC doesn't access local repo
+  '/build/$project/$repository/$arch/$package/_history' => \&bs_srcserver_common_notsure::getbuildhistory, #common, but not sure if RPC doesn't access local repo
+  '/build/$project/$repository/$arch/$package_repository/$filename' => \&bs_srcserver_common_notsure::getbinary, #common, but not sure if RPC doesn't access local repo
+  'PUT:/build/$project/$repository/$arch/_repository/$filename ignoreolder:bool? wipe:bool?' => \&bs_srcserver_common_notsure::putbinary, #common, but not sure if RPC doesn't access local repo
 
-  'POST:/request cmd: user:?' => \&createrequest, #bsdb only, but it is used only with links involved
-  '/request' => \&getrequestlist, #common
-  'POST:/request/$id:num cmd: newstate:? user:? comment:?' => \&postrequest, #common
-  '/request/$id:num' => \&getrequest, #common
-  'PUT:/request/$id:num user:?' => \&putrequest, #common
-  'DELETE:/request/$id:num' => \&delrequest, #common
-  '/search/request $match:' => \&search_request, #common, but i'm not sure about BSDB:: calls
+  'POST:/request cmd: user:?' => \&bs_srcserver_bsdbonly::createrequest, #bsdb only, but it is used only with links involved
+  '/request' => \&bs_srcserver_common::bs_srcserver_common::getrequestlist, #common
+  'POST:/request/$id:num cmd: newstate:? user:? comment:?' => \&bs_srcserver_common::postrequest, #common
+  '/request/$id:num' => \&bs_srcserver_common::getrequest, #common
+  'PUT:/request/$id:num user:?' => \&bs_srcserver_common::putrequest, #common
+  'DELETE:/request/$id:num' => \&bs_srcserver_common::delrequest, #common
+  '/bs_srcserver_common::search/request $match:' => \&bs_srcserver_common::bs_srcserver_common::search_request, #common, but i'm not sure about BSDB:: calls
 
-  '/ajaxstatus' => \&getajaxstatus, #common
+  '/ajaxstatus' => \&bs_srcserver_common::getajaxstatus, #common
 ];
 
 ####################################################################
 
 my $dispatches_ajax = [
   '/' => \&hello,
-  '/ajaxstatus' => \&getajaxstatus,
-  '/build/$project/_result oldstate:md5? view:resultview* repository* arch* package* code:*' => \&getresult,
-  '/build/$project/$repository/$arch/$package/_log nostream:bool? start:num? end:num?' => \&getlogfile,
-  '/build/$project/$repository/$arch/$package_repository view:? binary:filename*' => \&getbinarylist,
-  '/getbinaries $project $repository $arch binaries: nometa:bool? raw:bool?' => \&worker_getbinaries,
-  '/lastevents $filter:* start:num?' => \&worker_lastevents,
+  '/ajaxstatus' => \&bs_srcserver_common::getajaxstatus,
+  '/build/$project/_result oldstate:md5? view:resultview* repository* arch* package* code:*' => \&bs_srcserver_common_notsure::getresult,
+  '/build/$project/$repository/$arch/$package/_log nostream:bool? start:num? end:num?' => \&bs_srcserver_bsdbonly::getlogfile,
+  '/build/$project/$repository/$arch/$package_repository view:? binary:filename*' => \&bs_srcserver_common_notsure::bs_srcserver_common_notsure::getbinarylist,
+  '/getbinaries $project $repository $arch binaries: nometa:bool? raw:bool?' => \&bs_srcserver_common::worker_getbinaries,
+  '/lastevents $filter:* start:num?' => \&bs_srcserver_common::worker_lastevents,
 ];
 
 ####################################################################
@@ -295,9 +295,9 @@ my $conf = {
 my $aconf = {
   'socketpath' => $ajaxsocket,
   'dispatches' => $dispatches_ajax,
-  'getrequest_timeout' => 10,
+  'bs_srcserver_common::getrequest_timeout' => 10,
   'replrequest_timeout' => 10,
-  'getrequest_recvfd' => \&BSHandoff::receive,
+  'bs_srcserver_common::getrequest_recvfd' => \&BSHandoff::receive,
   'setkeepalive' => 1,
 };
 

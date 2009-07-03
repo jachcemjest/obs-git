@@ -1,5 +1,7 @@
 #!/usr/bin/perl -w
 
+package bs_srcserver_uploadonly;
+
 use strict;
 
 sub createkey {
@@ -42,18 +44,18 @@ sub putproject {
   }
   rename("$srcrep/:upload/$$.2", "$projectsdir/$projid.xml") || die("rename to $projectsdir/$projid.xml: $!\n");
   if ($BSConfig::forceprojectkeys) {
-    my ($sk) = getsignkey({}, $projid);
+    my ($sk) = bs_srcserver_common::getsignkey({}, $projid);
     createkey({}, $projid) if $sk eq '';
   }
-  notify_repservers('project', $projid);
+  bs_srcserver_common::notify_repservers('project', $projid);
 
-  $proj = readproj($projid);
+  $proj = bs_srcserver_common::readproj($projid);
   return ($proj, $BSXML::proj);
 }
 
 sub putprojectconfig {
   my ($cgi, $projid) = @_;
-  my $proj = readproj($projid);
+  my $proj = bs_srcserver_common::readproj($projid);
   mkdir_p("$srcrep/:upload");
   my $uploaded = BSServer::read_file("$srcrep/:upload/$$");
   die("upload failed\n") unless $uploaded;
@@ -62,7 +64,7 @@ sub putprojectconfig {
   } else {
     unlink("$projectsdir/$projid.conf") || die("unlink $projectsdir/$projid.conf: $!\n");
   }
-  notify_repservers('project', $projid);
+  bs_srcserver_common::notify_repservers('project', $projid);
   BSHermes::notify("SRCSRV_UPDATE_PROJECT_CONFIG", { "project" => $projid });
 
   return $BSStdServer::return_ok;
@@ -82,7 +84,7 @@ sub putpackage {
   # $pack->{'name'} = $packid;
   writexml("$srcrep/:upload/$$.2", undef, $pack, $BSXML::pack);
   unlink("$srcrep/:upload/$$");
-  my $proj = readproj($projid);
+  my $proj = bs_srcserver_common::readproj($projid);
   die("package '$packid' is read-only\n") if ($packid =~ /^_product:/) && ! -e "$projectsdir/$projid.pkg/$packid.xml";
   mkdir_p("$projectsdir/$projid.pkg");
   if (! -e "$projectsdir/$projid.pkg/$packid.xml") {
@@ -97,8 +99,8 @@ sub putpackage {
 #    push @{$proj->{'package'}}, {'name' => $packid};
 #    writexml("$srcrep/:upload/$$.3", "$projectsdir/$projid.xml", $proj, $BSXML::proj);
 #  }
-  notify_repservers('package', $projid, $packid);
-  $pack = readpack($projid, $packid);
+  bs_srcserver_common::notify_repservers('package', $projid, $packid);
+  $pack = bs_srcserver_common::readpack($projid, $packid);
   return ($pack, $BSXML::pack);
 }
 
