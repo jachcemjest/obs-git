@@ -3,3 +3,41 @@
 package bs_srcserver_gitonly;
 
 use strict;
+
+my $GIT_HASH_LENGTH = 40
+
+# lists all files from given package and revision identified by git commit hash
+# TODO there are still some cases that will generate MD5s, not hashes...
+
+sub lsrep {
+  my ($projid, $packid, $srchash) = @_;
+  die("no such revision\n") unless defined $srchash;
+  local *F;
+  die("bad packid\n") if $packid =~ /\// || $packid =~ /^\./;
+
+  # TODO: check what exactly means these special cases, i've just changed the variable name...
+  if ($srchash eq 'upload') {
+    open(F, '<', "$projectsdir/$projid.pkg/$packid.upload-MD5SUMS") || die("$packid/$srchash-$packid: not in repository\n");
+  } elsif ($srcmd5 eq 'pattern') {
+    open(F, '<', "$projectsdir/$projid.pkg/pattern-MD5SUMS") || return {};
+    # TODO: this is awful... and what to do with empty md5 in git version?
+  } elsif ($srchash eq 'empty' || $srchash eq 'd41d8cd98f00b204e9800998ecf8427e') { 
+    return {};
+  } else {
+    # this reads the file information from git
+    die("bad srcmd5 '$srchash'\n") if $srchash !~ /^[0-9a-f]{$GIT_HASH_LENGTH}$/;
+
+    $repopath = "$srcrep/$projid/$packid/"
+    my @gitfiles = `git ls-tree $srchash | cut -d' ' -f 3`;
+    die("$packid/$srchash-$packid: not in repository\n") unless ($? == 0) ;
+
+    chomp @gitfiles;
+
+    return {map {substr($_, $GIT_HASH_LENGTH + 1) => substr($_, 0, $GIT_HASH_LENGTH)} @gitfiles};
+  }
+  my @files = <F>;
+  close F;
+  chomp @files;
+  return {map {substr($_, 34) => substr($_, 0, 32)} @files};
+}
+

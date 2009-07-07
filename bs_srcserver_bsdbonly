@@ -53,6 +53,7 @@ sub remote_bs_srcserver_common_notsure::getrev {
   return $rev;
 }
 
+### obs-git: gitonly version ready
 sub lsrep {
   my ($projid, $packid, $srcmd5) = @_;
   die("no such revision\n") unless defined $srcmd5;
