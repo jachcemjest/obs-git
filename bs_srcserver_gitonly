@@ -9,8 +9,7 @@ sub putinsrcrep {
 
   open(F, '<', $tmpfile) || die("$tmpfile: $!\n");
 
-  chdir("$srcgitrep/$projid/$packid");            # prepne sa do adresara s repom
-  $git_hash = system("git hash-object -w $tmpfile"); # vypise na stdin hash
+  $git_hash = `GIT_DIR=$srcgitrep/$projid/$packid git hash-object -w $tmpfile`;
   # TODO: pridat ($git_hash, $filename) do $filelist-u XML co pride do funkcie nizsie
   unlink($tmpfile);
 
@@ -20,11 +19,11 @@ sub putinsrcrep {
 
 sub urobcommit {
   my ($cgi, $projid, $packid) = @_; # zoznam suborov (subor,hash) je v $filelist (z PUTu)
-  chdir("$srcgitrep/$projid/$packid");
   foreach ($file in $filelist) {
-    system("git update-index --cacheinfo 0644 " + $file.git_hash + " " + $file.name); # prida subor do commitu
+    # prida subor do commitu
+    `GIT_DIR=srcgitrep/$projid/$packid git update-index --cacheinfo 0644 " + $file.git_hash + " " + $file.name`;
   }
-  system("git commit")
-  $hash = system("git log | head -n 1 | cut -f 2 -d ' '")
+  `GIT_DIR=srcgitrep/$projid/$packid git commit`;
+  $hash = `GIT_DIR=srcgitrep/$projid/$packid git log | head -n 1 | cut -f 2 -d ' '`
   return $hash;
 }
