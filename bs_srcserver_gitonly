@@ -25,11 +25,15 @@ sub lsrep {
     return {};
   } else {
     # this reads the file information from git
-    die("bad srcmd5 '$srchash'\n") if $srchash !~ /^[0-9a-f]{$GIT_HASH_LENGTH}$/;
+    if ($srchash !~ /^[0-9a-f]{$GIT_HASH_LENGTH}$/) {
+      die("bad srcmd5 '$srchash'\n");
+    }
 
     $repopath = "$srcrep/$projid/$packid/"
     my @gitfiles = `git ls-tree $srchash | cut -d' ' -f 3`;
-    die("$packid/$srchash-$packid: not in repository\n") unless ($? == 0) ;
+    if ($? != 0 ) {
+      die("$packid/$srchash-$packid: not in repository\n");
+    }
 
     chomp @gitfiles;
 
