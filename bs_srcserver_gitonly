@@ -10,7 +10,7 @@ sub putinsrcrep {
   open(F, '<', $tmpfile) || die("$tmpfile: $!\n");
 
   chdir("$srcgitrep/$projid/$packid");            # prepne sa do adresara s repom
-  $git_hash = system("git hash-object $tmpfile"); # vypise na stdin hash
+  $git_hash = system("git hash-object -w $tmpfile"); # vypise na stdin hash
   # TODO: pridat ($git_hash, $filename) do $filelist-u XML co pride do funkcie nizsie
   unlink($tmpfile);
 
