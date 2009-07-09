@@ -4,7 +4,6 @@ package bs_srcserver_gitonly;
 
 use strict;
 
-
 sub putinsrcrep {
   my ($projid, $packid, $tmpfile, $filename) = @_;
 
@@ -12,7 +11,7 @@ sub putinsrcrep {
 
   chdir("$srcgitrep/$projid/$packid");            # prepne sa do adresara s repom
   $git_hash = system("git hash-object $tmpfile"); # vypise na stdin hash
-  # TODO: pridat ($git_hash, $filename) do XMLka co pride do funkcie nizsie
+  # TODO: pridat ($git_hash, $filename) do $filelist-u XML co pride do funkcie nizsie
   unlink($tmpfile);
 
   return $git_hash;
@@ -26,4 +25,6 @@ sub urobcommit {
     system("git update-index --cacheinfo 0644 " + $file.git_hash + " " + $file.name); # prida subor do commitu
   }
   system("git commit")
+  $hash = system("git log | head -n 1 | cut -f 2 -d ' '")
+  return $hash;
 }
