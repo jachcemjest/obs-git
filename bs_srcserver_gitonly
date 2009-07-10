@@ -4,7 +4,8 @@ package bs_srcserver_gitonly;
 
 use strict;
 
-my $GIT_HASH_LENGTH = 40
+my $GIT_HASH_LENGTH = 40 ;
+my $gittempdir = "$srcrep/:temp" ;
 
 # lists all files from given package and revision identified by git commit hash
 # TODO there are still some cases that will generate MD5s, not hashes...
@@ -90,11 +91,12 @@ sub putinsrcrep {
 }
 
 # Commits files previously prepared into repository
+# files param is a reference to hash of form { filename => hash }
 sub commitfiles {
   my ($cgi, $projid, $packid, $files) = @_;
 
-  for my $filehash (keys %$files) {
-    if ( system( "git --git-dir=\"$srcrep/$projid/$packid/\" update-index --cacheinfo 0644 $filehash $files->{$filehash}" ) != 0 ) {
+  for my $filename (keys %$files) {
+    if ( system( "git --git-dir=\"$srcrep/$projid/$packid/\" update-index --cacheinfo 0644 $files->{$filename} $filename" ) != 0 ) {
       die("failed git update-index");
     }
   }
@@ -107,6 +109,20 @@ sub commitfiles {
 
   return $githash unless ($? != 0);
   die( "cannot get git hash" );
+}
+
+# saves the file from project and package with specified hash into some temporary location
+# returns the filename
+sub fetchgitfile {
+  my ($projid, $packid, $githash) = @_;
+
+  $tmpfilename = "$gittempdir/$githash-$$";
+
+  if ( system( "git --git-dir=\"$srcrep/$projid/$packid/\" cat-file -p $githash > $tmpfilename" ) != 0 ) {
+    die("git cat-file failed");
+  }
+
+  return $tmpfilename;
 }
 
 # TODO: this needs 1 more function to implement and maybe more?
@@ -152,8 +168,7 @@ sub addrev {
   for my $type ('spec', 'dsc', 'kiwi') {
     my $file = bs_srcserver_common_notsure::findfile($projid, $packid, undef, $type, $files);
     next unless defined $file;
-     # TODO: code the function - saves the file from project and package with specified hash into some temporary location
-    my $tmpgitfile = fetchgitfile($srcrep, $packid, $files->{$file});
+    my $tmpgitfile = fetchgitfile($projid, $packid, $files->{$file});
     my $d = Build::parse($bconf, $tmpgitfile );
     unlink($tmpgitfile);
     next unless defined $d->{'version'};
