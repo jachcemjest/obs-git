@@ -53,6 +53,7 @@ sub remote_bs_srcserver_common_notsure::getrev {
   return $rev;
 }
 
+### obs-git: gitonly version ready
 sub lsrep {
   my ($projid, $packid, $srcmd5) = @_;
   die("no such revision\n") unless defined $srcmd5;
@@ -77,6 +78,7 @@ sub lsrep {
   return {map {substr($_, 34) => substr($_, 0, 32)} @files};
 }
 
+### obs-git: gitonly version available - but maybe needs revision
 sub addmeta {
   my ($projid, $packid, $files, $rev) = @_;
 
@@ -104,6 +106,7 @@ sub addmeta {
   return $srcmd5;
 }
 
+### obs-git: gitonly version ready
 sub putinsrcrep {
   my ($projid, $packid, $tmpfile, $filename) = @_;
 
@@ -210,6 +213,7 @@ sub expandproduct {
   return 1;
 }
 
+### obs-git: preliminary gitonly version ready
 sub addrev {
   my ($projid, $packid, $files, $user, $comment, $target) = @_;
   die("project '$projid' does not exist\n") unless -e "$projectsdir/$projid.xml";

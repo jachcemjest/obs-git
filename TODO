@@ -1,0 +1,11 @@
+- pridat hashe do .rev fajlov
+- vyrobit commit hook co bude pri komite ukladat novu reviziu do .rev fajlu
+- co so starymi reviziami?
+	- git ls-tree $hash
+	- git checkout $hash $filename
+	- zvazit git --bare s git --git-dir="..." vs git init bez --bare
+	- git cat-file -p $filehash -- hodi na vystup subor s danym hashom
+
+- git hash-object foo (vyrata hash suboru)
+- git hash-object -w foo (vyrata hash suboru a ulozi ho do .git/object/14/14ac145646c4
+- git update-index --cacheinfo 0644 14ac145646c4 foo (prida objekt 14... do commitu - subor foo s pravami 0644)
