@@ -3,7 +3,7 @@
 - co so starymi reviziami?
 	- git ls-tree $hash
 	- git checkout $hash $filename
-	- zvazit git --bare s git --git-der="..." vs git init bez --bare
+	- zvazit git --bare s git --git-dir="..." vs git init bez --bare
 	- git cat-file -p $filehash -- hodi na vystup subor s danym hashom
 
 - git hash-object foo (vyrata hash suboru)
