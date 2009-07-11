@@ -391,6 +391,7 @@ sub getfilelist {
   return ($ret, $BSXML::dir);
 }
 
+### obs-git: gitonly version ready - check dependency on getfilelist
 sub bs_srcserver_common_notsure::sourcecommitfilelist {
   my ($cgi, $projid, $packid) = @_;
   mkdir_p("$srcrep/:upload");
@@ -528,6 +529,7 @@ sub getfile {
   return undef;
 }
 
+###!!! obs-git: gitonly version ready
 sub putfile {
   my ($cgi, $projid, $packid, $filename) = @_;
   die("no filename\n") unless defined($filename) && $filename ne '';
@@ -555,6 +557,7 @@ sub putfile {
   return ($rev, $BSXML::revision);
 }
 
+###!!! obs-git: gitonly version ready
 sub delfile {
   my ($cgi, $projid, $packid, $filename) = @_;
   die("no filename\n") unless defined($filename) && $filename ne '';

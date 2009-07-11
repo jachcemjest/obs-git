@@ -242,15 +242,7 @@ sub putfile {
 
   # puts objects into repository and deletes temporary file
   my $githash = putinsrcrep($projid, $packid, "$gittempdir/$$",$filename);
-  my $srname = "$uploaded->{'md5'}-$filename";
-  if (! -e "$srcrep/$packid/$srname") {
-    mkdir_p "$srcrep/$packid";
-    rename("$srcrep/:upload/$$", "$srcrep/$packid/$srname") || die("rename $srcrep/:upload/$$ $srcrep/$packid/$srname: $!\n");
-  } else {
-    #already there, all the upload work was unneeded...
-    unlink("$srcrep/:upload/$$");
-  }
-  # create new meta file
+
   # TODO: again, srcmd5 name...
   my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
   $files->{$filename} = $githash;
@@ -261,3 +253,70 @@ sub putfile {
   $rev = addrev($projid, $packid, $files, $user, $comment, $cgi->{'rev'});
   return ($rev, $BSXML::revision);
 }
+
+sub delfile {
+  my ($cgi, $projid, $packid, $filename) = @_;
+  die("no filename\n") unless defined($filename) && $filename ne '';
+  die("bad filename\n") if $filename =~ /\// || $filename =~ /^\./;
+  my $rev = bs_srcserver_common_notsure::getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
+  die("unknown project/package\n") unless $rev;
+  # TODO: that srcmd5 name again..
+  my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
+  die("file '$filename' does not exist\n") unless $files->{$filename};
+
+  if ( system( "git --git-dir=\"$srcrep/$projid/$packid/\" rm $filename" ) != 0 ) {
+    die("git rm failed");
+  }
+
+  # TODO: toto asi zmazat: 
+  #$files = bs_srcserver_bsdbonly_links::keeplink($projid, $packid, $files) if $cgi->{'bs_srcserver_bsdbonly_links::keeplink'};
+  my $user = defined($cgi->{'user'}) ? $cgi->{'user'} : 'unknown';
+  my $comment = defined($cgi->{'comment'}) ? $cgi->{'comment'} : '';
+  $rev = addrev($projid, $packid, $files, $user, $comment, $cgi->{'rev'});
+  return ($rev, $BSXML::revision);
+}
+
+# TODO: gitobjecthashed is not coded - and it may not be possible?
+sub sourcecommitfilelist {
+  my ($cgi, $projid, $packid) = @_;
+  mkdir_p("$gittempdir");
+  my $uploaded = BSServer::read_file("$gittempdir/$$");
+  die("upload failed\n") unless $uploaded;
+  my $fl = readxml("$gittempdir/$$", $BSXML::dir);
+  unlink("$gittempdir/$$");
+  # make sure we know every file
+  my @missing;
+  my $files = {};
+  for my $entry (@{$fl->{'entry'} || []}) {
+    BSVerify::verify_filename($entry->{'name'});
+    #BSVerify::verify_md5($entry->{'md5'});
+    # TODO: maybe something like verify_sha1 !
+    # TODO: 
+    if (! gitobjecthashed($projid, $packid, entry->{'md5'})) {
+      push @missing, $entry;
+    } else {
+      die("duplicate file: $entry->{'name'}\n") if exists $files->{$entry->{'name'}};
+      $files->{$entry->{'name'}} = $entry->{'md5'};
+    }
+  }
+  if (@missing) {
+    my $res = {'name' => $packid, 'error' => 'missing', 'entry' => \@missing};
+    return ($res, $BSXML::dir);
+  }
+
+  # TODO: toto asi zmazat?
+  #$files = bs_srcserver_bsdbonly_links::keeplink($cgi, $projid, $packid, $files) if $cgi->{'bs_srcserver_bsdbonly_links::keeplink'};
+  my $user = defined($cgi->{'user'}) ? $cgi->{'user'} : 'unknown';
+  my $comment = defined($cgi->{'comment'}) ? $cgi->{'comment'} : '';
+  if (-e "$projectsdir/$projid.pkg/$packid.upload-MD5SUMS") {
+    # autocommit old update revision so that it doesn't get lost
+    # TODO: here may be a problem with addrev...
+    my $uploadfiles = lsrep($projid, $packid, 'upload');
+    addrev($projid, $packid, $uploadfiles, $user, 'autocommit');
+  }
+  my $rev = addrev($projid, $packid, $files, $user, $comment);
+
+  $cgi->{'rev'} = $rev->{'rev'};
+  return getfilelist($cgi, $projid, $packid);
+}
+
