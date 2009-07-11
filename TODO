@@ -15,3 +15,5 @@
 - da sa nejak zistit, ci bol objekt s nejakym hashom pridany do repa cez to git hash-object?
   - napisat perlovinu k tomu :P
     - sub gitobjecthashed($projid, $packid, $githash)
+
+- skusit zistit, co presne ma robit 'sourcecopy' - asi to vyraba linky, ale zda sa ze nie vzdy?
