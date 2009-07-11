@@ -4,8 +4,7 @@ package bs_srcserver_bsdbonly;
 
 use strict;
 
-# TODO: toto sa povodne volalo asi remote_getrev ....
-sub remote_bs_srcserver_common_notsure::getrev {
+sub remote_getrev {
   my ($projid, $packid, $rev) = @_;
   my $proj = bs_srcserver_common::remoteprojid($projid);
   return undef unless $proj;

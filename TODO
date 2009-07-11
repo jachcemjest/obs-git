@@ -4,16 +4,36 @@
 	- git ls-tree $hash
 	- git checkout $hash $filename
 	- zvazit git --bare s git --git-dir="..." vs git init bez --bare
+	  * asi budeme musiet nakoniec pouzit normalny (nie bare)
+	  * ten postup nizsie (hash-object + update-index + commit nefunguje:
+	    prve dva zbehnu, ale commit predpoklada ze bare nema index a nerobi nic)
 	- git cat-file -p $filehash -- hodi na vystup subor s danym hashom
 
 - git hash-object foo (vyrata hash suboru)
-- git hash-object -w foo (vyrata hash suboru a ulozi ho do .git/object/14/14ac145646c4
+- git hash-object -w foo (vyrata hash suboru a ulozi ho do .git/object/??/14ac145646c4
 - git update-index --cacheinfo 0644 14ac145646c4 foo (prida objekt 14... do commitu - subor foo s pravami 0644)
 
-- opravit pouzivanie modulov a tak
-  - napriklad: v bs_srcserver_bsdbonly je funkcia sub remote_bs_srcserver_common_notsure::getrev - ak si dobre pamatam, ma to byt remote_getrev
 - da sa nejak zistit, ci bol objekt s nejakym hashom pridany do repa cez to git hash-object?
   - napisat perlovinu k tomu :P
     - sub gitobjecthashed($projid, $packid, $githash)
 
+  * tomu celkom nerozumiem, pridavame objekty IBA pomocou hash-object, nie ?
+  * ak chces vediet iba ci tam object s tym hashom je, pripadne JEDEN z jeho nazvov tak:
+    * git rev-list --all --objects
+      - ale to ma nevyhodu ze prehladava revizie od korena do hlbky(?) a vypise iba prvy nazov na ktory natrafi
+        (potom si ho oznaci ako seen a uz ho ignoruje v dalsich reviziach)
+  * ak chces nazov suboru z hashu a v ktorej revizii je tak sa to robi takto (ale je to strasne draha operacia,
+    pri velkom repe 3 sek vs 250 sek):
+      * git rev-list --all
+        - vypise hashe vsetkych revizii
+      * potom pre kazdu reviziu
+        - git ls-tree $revhash
+    (samozrejme objekt moze byt vo viac reviziach a moze sa volat v kazdej inak
+     navyse nemusi byt v ziadnej revizii, ak na neho neexistuje odkaz - taky orphan,
+     ale to sa stava asi len v haluznych situaciach)
+  * implementacia prveho je na konci bs_srcserver_gitonly
+
 - skusit zistit, co presne ma robit 'sourcecopy' - asi to vyraba linky, ale zda sa ze nie vzdy?
+  * vyzera to tak, ze to to kopiruje subory z jedneho projektu/balicka do druheho + si vypomaha linkami
+  * nam to je jedno, v podstate len treba skopirovat projekt1/balicek1/* do projekt2/balicek2
+      * tym sa vlastne skopiruje git repo aj s objektmi (lebo to je symlink) aj s celou historiou (co chceme)

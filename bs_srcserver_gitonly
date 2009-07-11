@@ -30,8 +30,7 @@ sub lsrep {
       die("bad srchash '$srchash'\n");
     }
 
-    $repopath = "$srcrep/$projid/$packid/"
-    my @gitfiles = `git ls-tree $srchash | cut -d' ' -f 3`;
+    my @gitfiles = `git --git-dir=\"$srcrep/$projid/$packid/\" ls-tree $srchash | cut -d' ' -f 3`;
     if ($? != 0 ) {
       die("$packid/$srchash-$packid: not in repository\n");
     }
@@ -319,3 +318,7 @@ sub sourcecommitfilelist {
   return getfilelist($cgi, $projid, $packid);
 }
 
+sub gitobjecthashed($projid, $packid, $githash)
+{
+	return system("git --git-dir=\"$srcrep/$projid/$packid/\" rev-list --all --objects | grep -q \"$packid\"");
+}
