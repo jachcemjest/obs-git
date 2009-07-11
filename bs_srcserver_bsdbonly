@@ -4,6 +4,7 @@ package bs_srcserver_bsdbonly;
 
 use strict;
 
+# TODO: toto sa povodne volalo asi remote_getrev ....
 sub remote_bs_srcserver_common_notsure::getrev {
   my ($projid, $packid, $rev) = @_;
   my $proj = bs_srcserver_common::remoteprojid($projid);
@@ -512,7 +513,7 @@ sub sourcecopy {
   return ($rev, $BSXML::revision);
 }
 
-###!!! obs-git: in git should work with only changing the path
+###!!! obs-git: gitonly version ready
 sub getfile {
   my ($cgi, $projid, $packid, $filename) = @_;
   die("no filename\n") unless defined($filename) && $filename ne '';

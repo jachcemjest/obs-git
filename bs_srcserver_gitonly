@@ -27,7 +27,7 @@ sub lsrep {
   } else {
     # this reads the file information from git
     if ($srchash !~ /^[0-9a-f]{$GIT_HASH_LENGTH}$/) {
-      die("bad srcmd5 '$srchash'\n");
+      die("bad srchash '$srchash'\n");
     }
 
     $repopath = "$srcrep/$projid/$packid/"
@@ -81,9 +81,10 @@ sub addmeta {
 sub putinsrcrep {
   my ($projid, $packid, $tmpfile, $filename) = @_;
 
-  open(F, '<', $tmpfile) || die("$tmpfile: $!\n");
-
   $githash = `git --git-dir="$srcrep/$projid/$packid/" hash-object -w $tmpfile`;
+  if ($? != 0 ) {
+    die("git hash-object failed");
+  }
 
   unlink($tmpfile);
 
@@ -116,6 +117,7 @@ sub commitfiles {
 sub fetchgitfile {
   my ($projid, $packid, $githash) = @_;
 
+  mkdir_p("$gittempdir");
   $tmpfilename = "$gittempdir/$githash-$$";
 
   if ( system( "git --git-dir=\"$srcrep/$projid/$packid/\" cat-file -p $githash > $tmpfilename" ) != 0 ) {
@@ -125,7 +127,7 @@ sub fetchgitfile {
   return $tmpfilename;
 }
 
-# TODO: this needs 1 more function to implement and maybe more?
+# TODO: this needs review
 sub addrev {
   my ($projid, $packid, $files, $user, $comment, $target) = @_;
   die("project '$projid' does not exist\n") unless -e "$projectsdir/$projid.xml";
@@ -207,4 +209,55 @@ sub addrev {
 
   bs_srcserver_common::notify_repservers('package', $projid, $packid);
   return $rev;
+}
+
+sub getfile {
+  my ($cgi, $projid, $packid, $filename) = @_;
+  die("no filename\n") unless defined($filename) && $filename ne '';
+  die("bad filename\n") if $filename =~ /\// || $filename =~ /^\./;
+  # TODO: check use of getrev function
+  my $rev = bs_srcserver_common_notsure::getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
+  die("$filename: no such project/package\n") unless $rev;
+  # TODO: check that srcmd5 field - since it is also name of som file structure, it will hav to stay there with this bad name
+  my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
+  die("$filename: no such file\n") unless $files->{$filename};
+
+  my $tmpgitfile = fetchgitfile($projid, $packid, $files->{$filename});
+  my @s = stat($tmpgitfilename);
+  die("temporary git file for: $srcrep/$packid/$files->{$filename}-$filename: $!\n") unless @s;
+  BSServer::reply_file($tmpgitfilename, "Content-Length: $s[7]");
+  unlink($tmpgitfilename);
+  return undef;
+}
+
+sub putfile {
+  my ($cgi, $projid, $packid, $filename) = @_;
+  die("no filename\n") unless defined($filename) && $filename ne '';
+  die("bad filename\n") if $filename =~ /\// || $filename =~ /^\./;
+  my $rev = bs_srcserver_common_notsure::getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
+  die("unknown project/package\n") unless $rev;
+  mkdir_p("$gittempdir");
+  my $uploaded = BSServer::read_file("$gittempdir/$$");
+  die("upload failed\n") unless $uploaded;
+
+  # puts objects into repository and deletes temporary file
+  my $githash = putinsrcrep($projid, $packid, "$gittempdir/$$",$filename);
+  my $srname = "$uploaded->{'md5'}-$filename";
+  if (! -e "$srcrep/$packid/$srname") {
+    mkdir_p "$srcrep/$packid";
+    rename("$srcrep/:upload/$$", "$srcrep/$packid/$srname") || die("rename $srcrep/:upload/$$ $srcrep/$packid/$srname: $!\n");
+  } else {
+    #already there, all the upload work was unneeded...
+    unlink("$srcrep/:upload/$$");
+  }
+  # create new meta file
+  # TODO: again, srcmd5 name...
+  my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
+  $files->{$filename} = $githash;
+  # TODO: toto asi zmazat: 
+  #$files = bs_srcserver_bsdbonly_links::keeplink($cgi, $projid, $packid, $files) if $cgi->{'bs_srcserver_bsdbonly_links::keeplink'};
+  my $user = defined($cgi->{'user'}) ? $cgi->{'user'} : 'unknown';
+  my $comment = defined($cgi->{'comment'}) ? $cgi->{'comment'} : '';
+  $rev = addrev($projid, $packid, $files, $user, $comment, $cgi->{'rev'});
+  return ($rev, $BSXML::revision);
 }
