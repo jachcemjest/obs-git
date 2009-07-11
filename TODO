@@ -9,3 +9,11 @@
 - git hash-object foo (vyrata hash suboru)
 - git hash-object -w foo (vyrata hash suboru a ulozi ho do .git/object/14/14ac145646c4
 - git update-index --cacheinfo 0644 14ac145646c4 foo (prida objekt 14... do commitu - subor foo s pravami 0644)
+
+- opravit pouzivanie modulov a tak
+  - napriklad: v bs_srcserver_bsdbonly je funkcia sub remote_bs_srcserver_common_notsure::getrev - ak si dobre pamatam, ma to byt remote_getrev
+- da sa nejak zistit, ci bol objekt s nejakym hashom pridany do repa cez to git hash-object?
+  - napisat perlovinu k tomu :P
+    - sub gitobjecthashed($projid, $packid, $githash)
+
+- skusit zistit, co presne ma robit 'sourcecopy' - asi to vyraba linky, ale zda sa ze nie vzdy?

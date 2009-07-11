@@ -4,6 +4,7 @@ package bs_srcserver_bsdbonly;
 
 use strict;
 
+# TODO: toto sa povodne volalo asi remote_getrev ....
 sub remote_bs_srcserver_common_notsure::getrev {
   my ($projid, $packid, $rev) = @_;
   my $proj = bs_srcserver_common::remoteprojid($projid);
@@ -390,6 +391,7 @@ sub getfilelist {
   return ($ret, $BSXML::dir);
 }
 
+### obs-git: gitonly version ready - check dependency on getfilelist
 sub bs_srcserver_common_notsure::sourcecommitfilelist {
   my ($cgi, $projid, $packid) = @_;
   mkdir_p("$srcrep/:upload");
@@ -512,7 +514,7 @@ sub sourcecopy {
   return ($rev, $BSXML::revision);
 }
 
-###!!! obs-git: in git should work with only changing the path
+###!!! obs-git: gitonly version ready
 sub getfile {
   my ($cgi, $projid, $packid, $filename) = @_;
   die("no filename\n") unless defined($filename) && $filename ne '';
@@ -527,6 +529,7 @@ sub getfile {
   return undef;
 }
 
+###!!! obs-git: gitonly version ready
 sub putfile {
   my ($cgi, $projid, $packid, $filename) = @_;
   die("no filename\n") unless defined($filename) && $filename ne '';
@@ -554,6 +557,7 @@ sub putfile {
   return ($rev, $BSXML::revision);
 }
 
+###!!! obs-git: gitonly version ready
 sub delfile {
   my ($cgi, $projid, $packid, $filename) = @_;
   die("no filename\n") unless defined($filename) && $filename ne '';
