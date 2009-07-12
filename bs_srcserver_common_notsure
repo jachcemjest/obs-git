@@ -18,7 +18,8 @@ sub getrev {
   if (!defined($rev)) {
     $rev = BSFileDB::fdb_getlast("$projectsdir/$projid.pkg/$packid.rev", $srcrevlay);
     $rev = {'srcmd5' => 'empty'} unless $rev;
-  } elsif ($rev =~ /^[0-9a-f]{32}$/) {
+  } elsif (($rev =~ /^[0-9a-f]{32}$/) || ($rev =~ /^[0-9a-f]{$GIT_HASH_LENGTH}$/)) {
+    # TODO: obs-git: this should be for both md5 and sha1
     return undef unless -e "$projectsdir/$projid.pkg/$packid.rev";
     $rev = {'srcmd5' => $rev, 'rev' => $rev};
   } elsif ($rev eq 'upload') {
