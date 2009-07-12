@@ -7,6 +7,34 @@ use strict;
 my $GIT_HASH_LENGTH = 40 ;
 my $gittempdir = "$srcrep/:temp" ;
 
+
+##############
+
+# pridat do BSServer tuto fciu hned za reply_cpio
+
+sub reply_cpio_data {
+  my ($data, @args) = @_;
+  reply(undef, 'Content-Type: application/x-cpio', 'Transfer-Encoding: chunked', @args);
+  BSHTTP::swrite(\*CLNT, $data);
+  BSHTTP::swrite(\*CLNT, "0\r\n\r\n");
+}
+
+##########
+
+use File::Temp qw/ tempdir /;
+
+sub getsources {
+  my ($cgi, $projid, $packid, $srchash) = @_;
+  my $dir = tempdir();
+  if (system("git --git-dir=\"$srcrep/$projid/$packid/\" archive $srchash | tar -C $dir -xf -")) return undef;
+  my $data = `cd $dir ; ls | cpio -ov`
+  BSServer::reply_cpio_data($data);
+  rmtree($dir);
+  return undef;
+}
+
+##########
+
 # lists all files from given package and revision identified by git commit hash
 # TODO there are still some cases that will generate MD5s, not hashes...
 
