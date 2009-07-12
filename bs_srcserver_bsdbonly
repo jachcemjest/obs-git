@@ -290,6 +290,7 @@ sub addrev {
   return $rev;
 }
 
+### obs-git: gitonly vesrion that ignores links altogether is ready
 sub getfilelist {
   my ($cgi, $projid, $packid) = @_;
 

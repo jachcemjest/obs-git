@@ -318,7 +318,61 @@ sub sourcecommitfilelist {
   return getfilelist($cgi, $projid, $packid);
 }
 
-sub gitobjecthashed($projid, $packid, $githash)
-{
-	return system("git --git-dir=\"$srcrep/$projid/$packid/\" rev-list --all --objects | grep -q \"$packid\"");
+sub gitobjecthashed {
+  my ($projid, $packid, $githash) = @_;
+  return (system("git --git-dir=\"$srcrep/$projid/$packid/\" rev-list --all --objects | grep -q \"$githash\"") == 0);
+}
+
+# most of this function on bsdbonly handles links - here it is shorter
+sub getfilelist {
+  my ($cgi, $projid, $packid) = @_;
+
+  my $view = $cgi->{'view'};
+  my $rev = bs_srcserver_common_notsure::getrev($projid, $packid, defined($cgi->{'rev'}) ? $cgi->{'rev'} : 'upload');
+  die("nothing known\n") unless $rev;
+  my $ret = {};
+
+  # TODO: again srcmd5 name... but meaning should be correct
+  my $files = lsrep($projid, $packid, $rev->{'srcmd5'});
+
+  if ($cgi->{'extension'}) {
+    for (keys %$files) {
+      delete $files->{$_} unless /\.\Q$cgi->{'extension'}\E$/;
+    }
+  }
+
+  # TODO: this is virtualy same as getsources function -> reuse
+  if ($view && $view eq 'cpio') {
+    delete $files->{'/LINK'};
+    delete $files->{'/LOCAL'};
+    my @files = map {{'name' => $_, 'filename' => "$srcrep/$packid/$files->{$_}-$_"}} sort keys %$files;
+    BSServer::reply_cpio(\@files);
+    return undef;
+  }
+
+  my $ret = {};
+  $ret->{'name'} = $packid;
+  # TODO: srcmd5 name...
+  $ret->{'srcmd5'} = $rev->{'srcmd5'} if $rev->{'srcmd5'} ne 'empty';
+  $ret->{'rev'} = $rev->{'rev'} if exists $rev->{'rev'};
+  $ret->{'vrev'} = $rev->{'vrev'} if exists $rev->{'vrev'};
+
+  delete $files->{'/LINK'};
+  delete $files->{'/LOCAL'};
+
+  my @res;
+  for my $filename (sort keys %$files) {
+    $tmpfilename = fetchgitfile($projid, $packid, $files->{$filename});
+    my @s = stat($tmpfilename);
+    unlink($tmpfilename)
+    if (@s) {
+      # TODO: it is not md5, but sha1 - but the protocol expects md5...
+      push @res, {'name' => $filename, 'md5' => $files->{$filename}, 'size' => $s[7], 'mtime' => $s[9]};
+    } else {
+      push @res, {'name' => $filename, 'md5' => $files->{$filename}, 'error' => "$!"};
+    }
+  }
+
+  $ret->{'entry'} = \@res;
+  return ($ret, $BSXML::dir);
 }
