@@ -10,7 +10,7 @@ my $gittempdir = "$srcrep/:temp" ;
 
 ##############
 
-# pridat do BSServer tuto fciu hned za reply_cpio
+# TODO: pridat do BSServer tuto fciu hned za reply_cpio
 
 sub reply_cpio_data {
   my ($data, @args) = @_;

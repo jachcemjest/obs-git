@@ -37,3 +37,21 @@
   * vyzera to tak, ze to to kopiruje subory z jedneho projektu/balicka do druheho + si vypomaha linkami
   * nam to je jedno, v podstate len treba skopirovat projekt1/balicek1/* do projekt2/balicek2
       * tym sa vlastne skopiruje git repo aj s objektmi (lebo to je symlink) aj s celou historiou (co chceme)
+
+- Prepisovanie bsdbonly -> gitonly
+  - podstatne veci vyzeraju byt prepisane, az na sourcecopy a remote_getrev
+    - remote_getrev zatial asi neriesime
+  - ale samozrejme neotestovane
+  - moze byt problem, ze sa miesaju md5 a hashe
+    - funkcie dost casto vracaju v policku 'srcmd5' sha1 hash... takze ak by to vyssia vrstva kontrolovala, mohlo by to prestat fungovat, ze...
+  - veci s linkami sme jednoducho odignorovali
+
+- uploadonly
+  - toto este nie je, ale malo by to byt pomerne rychle
+
+- common_notsure
+  - stale not sure :P
+
+- pruser je, ze linky sa nevytvaraju v backende...
+
+- protokol ako taky evidnetne sity na mieru srcrep

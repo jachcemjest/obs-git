@@ -869,6 +869,7 @@ sub getprojpack {
 #  worker calls
 ##
 
+###!!! obs-git: gitonly version ready
 sub getsources {
   my ($cgi, $projid, $packid, $srcmd5) = @_;
   my $files = lsrep($projid, $packid, $srcmd5);
