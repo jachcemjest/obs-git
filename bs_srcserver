@@ -125,7 +125,7 @@ sub prp_to_repoinfo {
     my $repoinfodb = BSDB::opendb($extrepodb, 'repoinfo');
     $repoinfo = $repoinfodb->fetch($prp);
     if ($repoinfo) {
-      for (@{$repoinfo->{'prpbs_srcserver_common::searchpath'} || []}) {
+      for (@{$repoinfo->{'prpsearchpath'} || []}) {
 	next if ref($_);	# legacy
 	my ($p, $r) = split('/', $_, 2);
 	$_ = {'project' => $p, 'repository' => $r};
@@ -190,7 +190,7 @@ my $dispatches = [
   '/source/$project/_config' => \&bs_srcserver_common::bs_srcserver_common::getprojectconfig, #common
   'PUT:/source/$project/_config' => \&bs_srcserver_uploadonly::bs_srcserver_uploadonly::putprojectconfig, #upload only
 
-  'POST:/source/$project/$package cmd: rev? user:? comment:? orev:rev? oproject:project? opackage:package? expand:bool? bs_srcserver_bsdbonly_links::keeplink:bool? repairlink:bool? linkrev? unified:bool?' => \&bs_srcserver_common::sourcecmd, #common main function, but subfunctions are bsdb dependant
+  'POST:/source/$project/$package cmd: rev? user:? comment:? orev:rev? oproject:project? opackage:package? expand:bool? keeplink:bool? repairlink:bool? linkrev? unified:bool?' => \&bs_srcserver_common::sourcecmd, #common main function, but subfunctions are bsdb dependant
   'PUT:/source/$project/$package cmd: rev? user:? comment:?' => \&bs_srcserver_bsdbonly::bs_srcserver_common_notsure::sourcecommitfilelist, #bsdb only
   '/source/$project/$package:package_product rev? linkrev? emptylink:bool? expand:bool? view:? extension:? lastworking:bool?' => \&bs_srcserver_bsdbonly::bs_srcserver_bsdbonly::getfilelist, #bsdb only
   '/source/$project/$package:package_product/_history rev?' => \&bs_srcserver_common::bs_srcserver_common::getpackagehistory, #common
@@ -198,45 +198,45 @@ my $dispatches = [
   'PUT:/source/$project/$package/_meta' => \&bs_srcserver_uploadonly::putpackage, #upload only
   'DELETE:/source/$project/$package' => \&bs_srcserver_common::delpackage, #common, but uses bs_srcserver_bsdbonly::expandproduct function (bsdb only)
   '/source/$project/$package:package_pattern/$filename rev?' => \&bs_srcserver_bsdbonly::getfile, #bsdb only, but probably only path variable need change in git
-  'PUT:/source/$project/$package:package_pattern/$filename rev? user:? comment:? bs_srcserver_bsdbonly_links::keeplink:bool?' => \&bs_srcserver_bsdbonly::putfile, #bsdb only
-  'DELETE:/source/$project/$package:package_pattern/$filename rev? user:? comment:? bs_srcserver_bsdbonly_links::keeplink:bool?' => \&bs_srcserver_bsdbonly::delfile, #bsdb only
+  'PUT:/source/$project/$package:package_pattern/$filename rev? user:? comment:? keeplink:bool?' => \&bs_srcserver_bsdbonly::putfile, #bsdb only
+  'DELETE:/source/$project/$package:package_pattern/$filename rev? user:? comment:? keeplink:bool?' => \&bs_srcserver_bsdbonly::delfile, #bsdb only
   '/source/$project/$package:package_product/$filename rev?' => \&bs_srcserver_bsdbonly::getfile, #before
-  'PUT:/source/$project/$package:package_product/$filename rev? user:? comment:? bs_srcserver_bsdbonly_links::keeplink:bool?' => \&bs_srcserver_bsdbonly::putfile, #before
-  'DELETE:/source/$project/$package:package_product/$filename rev? user:? comment:? bs_srcserver_bsdbonly_links::keeplink:bool?' => \&bs_srcserver_bsdbonly::delfile, #before
+  'PUT:/source/$project/$package:package_product/$filename rev? user:? comment:? keeplink:bool?' => \&bs_srcserver_bsdbonly::putfile, #before
+  'DELETE:/source/$project/$package:package_product/$filename rev? user:? comment:? keeplink:bool?' => \&bs_srcserver_bsdbonly::delfile, #before
 
-  # /bs_srcserver_common::published name spec: access bs_srcserver_common::published binaries
-  '/bs_srcserver_common::published' => \&bs_srcserver_common::published, #common
-  '/bs_srcserver_common::published/$project' => \&bs_srcserver_common::published,
-  '/bs_srcserver_common::published/$project/$repository' => \&bs_srcserver_common::published,
-  '/bs_srcserver_common::published/$project/$repository/$arch:filename view:?' => \&bs_srcserver_common::published,
-  '/bs_srcserver_common::published/$project/$repository/$arch:filename/$filename view:?' => \&bs_srcserver_common::published,
+  # /published name spec: access published binaries
+  '/published' => \&bs_srcserver_common::published, #common
+  '/published/$project' => \&bs_srcserver_common::published,
+  '/published/$project/$repository' => \&bs_srcserver_common::published,
+  '/published/$project/$repository/$arch:filename view:?' => \&bs_srcserver_common::published,
+  '/published/$project/$repository/$arch:filename/$filename view:?' => \&bs_srcserver_common::published,
 
   # scheduler calls
-  '/bs_srcserver_bsdbonly::getprojpack $project* $repository* $package* $arch? withrepos:bool? withsrcmd5:bool? withdeps:bool? withconfig:bool? expandedrepos:bool? ignoredisable:bool? nopackages:bool? withremotemap:bool?' => \&bs_srcserver_bsdbonly::getprojpack, #bsdb only, but looks like marginal usage only
+  '/getprojpack $project* $repository* $package* $arch? withrepos:bool? withsrcmd5:bool? withdeps:bool? withconfig:bool? expandedrepos:bool? ignoredisable:bool? nopackages:bool? withremotemap:bool?' => \&bs_srcserver_bsdbonly::getprojpack, #bsdb only, but looks like marginal usage only
   'POST:/relsync $project $repository $arch' => \&bs_srcserver_common_notsure::postrelsync, #common, but not sure if RPC doesn't access local repo
   '/relsync $project $repository $arch' => \&bs_srcserver_common_notsure::getrelsync, #common, but not sure if RPC doesn't access local repo
 
   # worker calls
-  '/bs_srcserver_bsdbonly::getsources $project $package $srcmd5:md5' => \&bs_srcserver_bsdbonly::getsources, #bsdb only
-  '/bs_srcserver_common::getconfig $project $repository path:prp*' => \&bs_srcserver_common::getconfig, #common, but some subroutine are unsure
+  '/getsources $project $package $srcmd5:md5' => \&bs_srcserver_bsdbonly::getsources, #bsdb only
+  '/getconfig $project $repository path:prp*' => \&bs_srcserver_common::getconfig, #common, but some subroutine are unsure
 
-  '/bs_srcserver_common::getsignkey $project withpubkey:bool?' => \&bs_srcserver_common::getsignkey, #common
+  '/getsignkey $project withpubkey:bool?' => \&bs_srcserver_common::getsignkey, #common
   '/getbinaries $project $repository $arch binaries: nometa:bool?' => \&bs_srcserver_common::worker_getbinaries, #common
   '/lastevents $filter:* start:num?' => \&bs_srcserver_common::worker_lastevents, #common
   '/event type: project: package:? repository:? arch:? job:?' => \&bs_srcserver_common::newevent, #common
   # tmp until lightty gets fixed
   '/public/lastevents $filter:* start:num?' => \&bs_srcserver_common::worker_lastevents, #before
 
-  # bs_srcserver_common::search interface
-  '/bs_srcserver_common::search $in: $match: return:? values:bool?' => \&bs_srcserver_common::search, #common
-  '/bs_srcserver_common::search/project $match:' => \&bs_srcserver_common::bs_srcserver_common::search_proj, #common
-  '/bs_srcserver_common::search/project/id $match:' => \&bs_srcserver_common::bs_srcserver_common::bs_srcserver_common::search_proj_id, #common
-  '/bs_srcserver_common::search/package $match:' => \&bs_srcserver_common::bs_srcserver_common::search_pack, #common
-  '/bs_srcserver_common::search/package/id $match:' => \&bs_srcserver_common::bs_srcserver_common::bs_srcserver_common::search_pack_id, #common
+  # search interface
+  '/search $in: $match: return:? values:bool?' => \&bs_srcserver_common::search, #common
+  '/search/project $match:' => \&bs_srcserver_common::bs_srcserver_common::search_proj, #common
+  '/search/project/id $match:' => \&bs_srcserver_common::bs_srcserver_common::bs_srcserver_common::search_proj_id, #common
+  '/search/package $match:' => \&bs_srcserver_common::bs_srcserver_common::search_pack, #common
+  '/search/package/id $match:' => \&bs_srcserver_common::bs_srcserver_common::bs_srcserver_common::search_pack_id, #common
 
-  'POST:/bs_srcserver_common::search/bs_srcserver_common::published cmd:' => \&bs_srcserver_common::search_bs_srcserver_common::published_updatedb, #common, but i'm not sure about BSDB:: calls
-  '/bs_srcserver_common::search/bs_srcserver_common::published/binary/id $match:' => \&bs_srcserver_common::search_bs_srcserver_common::published_binary_id, #common, but i'm not sure about BSDB:: calls and some DB-stored paths
-  '/bs_srcserver_common::search/bs_srcserver_common::published/pattern/id $match:' => \&bs_srcserver_common::search_bs_srcserver_common::published_pattern_id, #common, but i'm not sure about BSDB:: calls and some DB-stored paths
+  'POST:/search/published cmd:' => \&bs_srcserver_common::search_bs_srcserver_common::published_updatedb, #common, but i'm not sure about BSDB:: calls
+  '/search/published/binary/id $match:' => \&bs_srcserver_common::search_bs_srcserver_common::published_binary_id, #common, but i'm not sure about BSDB:: calls and some DB-stored paths
+  '/search/published/pattern/id $match:' => \&bs_srcserver_common::search_bs_srcserver_common::published_pattern_id, #common, but i'm not sure about BSDB:: calls and some DB-stored paths
 
   # build calls for binary files
   '/build' => \&bs_srcserver_common::bs_srcserver_common::getprojectlist, #common, before
@@ -266,7 +266,7 @@ my $dispatches = [
   '/request/$id:num' => \&bs_srcserver_common::getrequest, #common
   'PUT:/request/$id:num user:?' => \&bs_srcserver_common::putrequest, #common
   'DELETE:/request/$id:num' => \&bs_srcserver_common::delrequest, #common
-  '/bs_srcserver_common::search/request $match:' => \&bs_srcserver_common::bs_srcserver_common::search_request, #common, but i'm not sure about BSDB:: calls
+  '/search/request $match:' => \&bs_srcserver_common::bs_srcserver_common::search_request, #common, but i'm not sure about BSDB:: calls
 
   '/ajaxstatus' => \&bs_srcserver_common::getajaxstatus, #common
 ];
@@ -295,9 +295,9 @@ my $conf = {
 my $aconf = {
   'socketpath' => $ajaxsocket,
   'dispatches' => $dispatches_ajax,
-  'bs_srcserver_common::getrequest_timeout' => 10,
+  'getrequest_timeout' => 10,
   'replrequest_timeout' => 10,
-  'bs_srcserver_common::getrequest_recvfd' => \&BSHandoff::receive,
+  'getrequest_recvfd' => \&BSHandoff::receive,
   'setkeepalive' => 1,
 };
 

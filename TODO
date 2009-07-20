@@ -1,3 +1,13 @@
+- choose if every commit will be a new revision or only every push to the repository
+  - for now I'm more willing to choose commit
+
+ULOHY:
+t1: prekopat ten fajl s reviziami aby tam mohol byt hash
+t2: urobit rozlisenie medzi git a srcrep packages
+t3: protokol na posielanie suborov/komitov do repo
+
+ts1: zistit, ktore funkcie z backendu pouzivaju worker a scheduler (a ako ich pouzivaju)
+
 - pridat hashe do .rev fajlov
 - vyrobit commit hook co bude pri komite ukladat novu reviziu do .rev fajlu
 - co so starymi reviziami?
